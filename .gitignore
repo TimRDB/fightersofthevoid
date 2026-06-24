@@ -1,0 +1,7 @@
+# VS Code
+.vscode/
+.github/chatmodes/
+
+# OS
+Thumbs.db
+.DS_Store

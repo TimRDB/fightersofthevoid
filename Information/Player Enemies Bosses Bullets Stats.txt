@@ -1,0 +1,331 @@
+Here's the full reference pulled from the code:
+
+Player
+Stat	Value
+Health (base)	100
+Max health (base)	100
+Health level 1 (normal)	100 max
+Health level 2 (upgraded)	200 max
+Player bullets
+Bullet		Damage	Speed	Size	Notes
+Normal bullet	25	8	4×10	Fires firepower bullets in a cone (spread 0.1 rad)
+Tracking bullet	20	6	6×6	Tracks nearest enemy, life 180 frames, tracking strength 0.15
+
+Enemies
+Name	Health	Speed	Shoot rate	Pattern	Bullet damage	Bullet notes
+basic	30	2	1500 ms	single	40	6×6, straight down, speedY 3
+fast	20	4	1000 ms	single	40	same as basic
+heavy	80	1	2000 ms	triple	35	3 bullets, spread across ±20px, speedX ±0.5
+zigzag	40	2.5	1200 ms	spread	28	5 bullets, speedX i×1.5 for i = −2..2
+sniper	35	1.5	2500 ms	aimed	45	8×8, aimed at player, speed 4
+elite	200	1.5	1800 ms	elite_burst	55 (aimed) / 48 (spiral)	60% chance: 3-shot aimed burst at speed 4.5; 40% chance: 8-shot spiral at speed 3.5
+drone	15	3.5	800 ms	single	65	8×8, targeted at player, speed 4
+dreadnought	750	0.5	700 ms	dreadnought_turret	60	12×12, aimed at player from turret top, speed 5
+void_soldier	35	3	1100 ms	void_dual_cone	70	2 void bullets, 50° cone, speed 4.5
+void_sniper	60	1	733 ms	void_sniper_shot	80	void bullet, aimed at player, speed 5
+void_warrior	120	1.5	1800 ms	void_warrior_teleport	45	4 teleporting void bullets (2 per body), initial speed 2, teleport after 20–35 frames
+asteroid_layer	400	0.8	4000 ms	asteroid_spread	—	launches 3–5 asteroids; 30% drift toward player, 20% fast variant
+void_soldier special variant: 10% spawn chance — fires void_parallel (2 parallel aimed bullets, speed 4.9, damage 75) at shootRate 700 ms instead.
+
+Bosses
+Boss 1 — Mark I Destroyer
+Stat	Value
+Level	1
+Health	5,000
+Size	120×80
+Speed	2
+Movement	Left/right patrol
+Phases (health %):
+
+Phase 1: >66%
+Phase 2: 33–66%
+Phase 3: <33%
+Shoot rate: Phase 1: 800 ms · Phase 2: 500 ms · Phase 3: 300 ms · Pattern changes every 60 frames
+
+Pattern	Description	Damage
+0	Straight-down barrage from 3 bottom guns	48
+1	Circular spread — 8 bullets from central guns in all directions, speed 3	42
+2	Aimed shots from one gun every 4 — speed 5	55
+3	Spiral — 8 bullets time-rotated, speed 4	44
+Boss 2 — The Knight
+Stat	Value
+Level	2
+Health	7,500
+Size	140×100
+Speed	1.8
+Movement	Horizontal + vertical hover oscillation
+Phases: same thresholds as above
+
+Shoot rate: Phase 1: 600 ms · Phase 2: 400 ms · Phase 3: 250 ms
+
+Special mechanics:
+
+Teleport (phases 2–3): 1-second warning, every ~8 seconds, 5-second cooldown
+Energy shield (phase 3): activates randomly, lasts 3 seconds, 6-second cooldown
+Laser charge (phases 2–3): charges 1.5–2 seconds before firing; every ~4 seconds
+Pattern	Description	Damage
+0	7-wide purple barrage, speedX spread ±0.9, speedY 4.5	55
+1	Double spiral — 2 × 8 bullets, speed 4.5	48
+2	5-shot tracking burst toward player, spread ±spread offsets	62
+3	8-direction cross + diagonals, speed 4	52
+4	Pulse wave — 3 rings of 6/8/10 bullets, speed 3/3.5/4, timed 200 ms apart	44
+Laser	10-segment beam aimed at player, speed 15, width 20	95
+Advanced laser	3-beam sweep, 12 segments each, speed 18, width 25	120
+Boss 3 — Mark II Destroyer
+Stat	Value
+Level	3
+Health	12,000
+Size	390×145
+Speed	1.5
+Phases: same thresholds
+
+Shoot rate: Phase 1: 450 ms · Phase 2: 300 ms · Phase 3: 200 ms · Pattern changes every 80/100/120 frames
+
+Special mechanic — Bomb (triggered at 50% health, repeating every ~3 s):
+
+Boss pauses, 5-count countdown, bomb launches downward
+Bomb explodes at 67% screen height
+Spawns 6 waves total: circular explosions, spiral patterns, random scatter, + cross patterns
+Bullet damage: 40–85 depending on wave and bullet type
+Instant kill if player within 120px of detonation
+Pattern	Description	Damage
+0	7-wide barrage, speedY 4.5; 30% chance isRegularPlus	52 / 65
+1	16-bullet circular spread, speed 3.5; 25% isRegularPlus	45 / 58
+2	5-shot aimed burst with offset spread, speed 5.5; 40% isRegularPlus	60 / 75
+3	Double spiral 2×8, speed 4.5; 20% isRegularPlus	48 / 62
+4	Wave pattern — 3 waves × 6 bullets with sin offset, speedY 3.5–4.5; 35% isRegularPlus	50 / 68
+Boss 4 — The Count
+Stat	Value
+Level	4
+Health	15,000
+Size	240×175
+Speed	1.2 (×0.7)
+Phases: same thresholds
+
+Shoot rate: Phase 1: 240 ms · Phase 2: 180 ms · Phase 3: 120 ms
+(Long pauses between bursts: 3000 / 2400 / 1800 ms)
+
+Special mechanics:
+
+Void core rotates faster as health decreases
+Final attack charges at ≤25% health — 3-second charge
+Complex attacks fire every 4800 / 3600 / 2400 ms
+Pattern	Description	Damage
+0	Void pulse rings — 3 rings of 8/12/16 bullets, alternating fast/slow; select teleporting	35
+1	Converging void streams — 7 streams × 4 bullets, outer bullets fast; some teleporting	38
+2	Void spiral maze — 4 arms × 7 bullets, radius expanding; first arm outer bullets teleport	32
+3	Void wave burst — 14 bullets, speed varies 4–6.5 with sin wave; some teleporting	42
+Complex attacks:
+
+Description	Damage
+Orbital void mines	3 orbits of 5/7/9 mines, speed 1.5, outer orbit has teleporting mines	45
+Void pulse waves	4 pulses × 14 bullets, 200 ms apart; final pulse has teleporting bullets	38
+Void fractal burst	3 depth levels × 5–9 branches × 3 sub-bullets	35–45
+Final attack (≤25% health):
+
+2 waves of 30 teleporting void bullets, staggered 300 ms
+Edge barrage: 8 bullets from top edge, 6 from each side edge
+Bullet damage: 55 all
+Boss 5 — Mark III Destroyer Prototype
+Stat	Value
+Level	5
+Health	20,000
+Size	200×150
+Speed	1.6 (×0.8)
+Phases:
+
+Phase 1: >66%
+Phase 2: 33–66%
+Phase 3: 15–33%
+Self-destruct: ≤15% — 5-second countdown then detonation
+Shoot rate: Phase 1: ~3000 ms pause · Phase 2: ~2500 ms · Phase 3: ~2000 ms
+Cluster bombs: 4000 / 3200 / 2500 ms · Laser bombs: 8000 / 6500 / 5000 ms
+
+Pattern	Description	Damage
+0	3-wide straight barrage, speedY 5	50
+1	Diagonal cross — 4 directions × 3 bullets	45
+2	3-missile barrage aimed at player with spread	60
+3	Gun turret spray — 2 sides × 3 bullets, angle spread 0.3	40
+4	Converging lines — 3 lines × 3 bullets from top of screen	45
+5	Asymmetric — 3 bullets from left gun, 2 from right	50 / 45
+Cluster bomb	Falls down screen, explodes into 3 clusters × 8 bullets, 200 ms apart	35
+Laser bomb	Travels to player area, explodes, fires 4 laser beams in different directions	60
+Self-destruct	3 waves × (8/10/12) ring bullets + scatter bullets	40–50
+Boss 6 — Machine Of The Void
+Stat	Value
+Level	6
+Health	30,000
+Size	90% screen width × screen height / 2.5
+Speed	0.5
+Phases: no fixed thresholds — all values scale continuously with health %
+
+Corruption scaling:
+
+voidCorruption: 10%→100% as health drops
+voidBulletChance: 20%→80%
+regularPlusChance: 30%→10%
+attackChaos: 10%→90%
+Laser cooldown: 300 ms→60 ms
+Three bullet types (all machine patterns use these):
+
+Type	Damage	Size
+Regular	50	8×8
+Regular+	65	10×10
+Void	85	12×12
+Pattern	Description
+Spread	5–12 bullets from random body positions, circular spread
+Barrage	3–6 rows × 4–9 bullets, staggered 120 ms
+Cross	8 directions × 3–7 bullets per direction
+Spiral	8–18 bullets spiraling outward
+Wave	3–6 waves × 5–11 bullets with sin offset
+Chaos	12–30 bullets from random positions, random angles and timing
+Laser system:
+
+Warning tracer shown 1 second before firing
+60% chance terminates on screen → creates glowing laser bomb → fires 4 beams on explosion
+40% chance sweeps off-screen in player direction → direct hit deals 85 damage
+Accuracy degrades with laserMalfunction as health drops
+Death sequence: black hole grows to radius 150 then collapses
+
+Player Bullets
+Normal Bullet
+Size: 4×10
+Speed: 8 (straight up)
+Damage: 25
+Visual: Cyan rectangle (#00ffff); switches to orange (#ffaa00) when rapid fire is active
+Tracking Bullet
+Size: 6×6
+Speed: 6 (steers toward target)
+Damage: 20
+Life: 180 frames
+Tracking strength: 0.15 (15% direction correction per frame)
+Visual: Purple circle with white core, soft glow
+Tracking Overflow Bullet (tracking gun at max capacity)
+Size: 8×8
+Speed: 6 (tracks)
+Damage: 75
+Life: 300 frames
+Tracking strength: 0.20
+Visual: Pulsing magenta/pink circle with bright white core and strong glow; explodes into more tracking bullets on reaching 30% screen height
+Enemy/Boss Bullets
+Standard Bullet (no flag — default fallback)
+Size: 5–8×5–8 (varies)
+Damage: 28–52 (varies by source)
+Visual: Plain red rectangle (#ff4444)
+Used by: basic, fast, heavy, triple, spread, Knight patterns, bomb waves, all untagged bullets
+Drone Bullet (isDroneBullet)
+Size: 8×8
+Speed: 4 (aimed at player)
+Damage: 65
+Visual: Bright green circle with white core (#00ff00)
+Void Bullet (isVoidBullet)
+Size: 8–12×8–12
+
+Damage: 32–80 (varies by source)
+
+Visual: Purple triple-layer circles (#8e44ad → #c39bd3 → #e8daef), soft purple glow
+
+Sub-variants (applied on top):
+
+Fast Void (isFastVoid)
+
+More intense visual: pink/magenta layers (#b83dba → #e91e63 → #ff69b4) with a motion trail
+Yellow warning glow pulses if teleport is imminent
+Teleport Bullet (isTeleportBullet)
+
+Travels normally, then teleports after a timer (20–60 frames depending on source)
+Reappears near the player at speed 3–4.5
+Hit damage capped at 45 by a safety clamp in collision code
+Has a 30-frame cooldown window after hitting — only one teleport bullet can deal damage per 0.5 s
+Final Attack Bullet (isFinalAttackBullet)
+
+Same as teleport void bullet but with faster teleport speed (higher multiplier)
+Regular+ Bullet (isRegularPlus)
+Size: 8–10×8–10
+Damage: 40–85 (varies by source)
+Visual: Layered orange-red rectangle (#ff4444 → #ff8800 → #ffaa00) with orange glow; continuously emits 3 small flame particles per frame
+Special effect on hit: inflicts health drain — 2 damage every ~0.33 seconds for 3 seconds (bypasses shield)
+Bomb Bullet (isBombBullet)
+Size: 4–8×4–8
+Damage: 30–85 (varies by wave)
+Visual: Falls through to Standard Bullet rendering unless also marked isRegularPlus, in which case draws as Regular+ bullet
+Spawned exclusively by the Mark II Destroyer bomb explosion
+Knight Bullet (isKnightBullet)
+Size: 7–12×7–12
+Damage: 44–62
+Visual: Standard red rectangle (no dedicated draw branch — uses fallback)
+Mark III Bullet (isMarkIIIBullet)
+Size: 6–9×6–9
+Damage: 40–60
+Visual: Pink-red layered rectangles (#ff3366 → #ff6699 → white core), "angular military" style
+Missile (isMarkIIIBullet + isMissile)
+Size: 12×12
+Speed: 4 (aimed at player)
+Damage: 60
+Visual: Grey body with red nose and yellow tail section
+Cluster Bullet (isClusterBullet)
+Size: 6×6
+Damage: 35
+Visual: Orange circle with brighter orange core (#ff6600 → #ffaa00), weak glow
+Self-Destruct Bullet (isSelfDestructBullet)
+Size: 5–8×5–8
+Damage: 40–50
+Visual: Red circle with pink layer and white core (#ff0000 → #ff6666 → #ffffff)
+Laser-Type Bullets
+Laser Segment (isLaser)
+Size: 20×20
+Speed: 15
+Damage: 95
+Life: 60 frames (fades over lifetime)
+Visual: Red circle with white core, red glow; 10 segments chained across the beam
+Advanced Laser Segment (isAdvancedLaser)
+Size: 25×25
+Speed: 18
+Damage: 120
+Life: 75 frames
+Visual: Orange-red outer halo → orange mid → yellow-white core; 12 segments per beam, 3 beams total
+Laser Pulse (isLaserPulse)
+Size: 40×40
+Speed: 9 (half of advanced laser speed)
+Damage: 150
+Life: 90 frames
+Visual: Expanding orange ring (grows from center) + purple interior orb + white core; fires at the tip of each advanced laser beam (3 total)
+Laser Warning (isLaserWarning)
+Size: 2×2
+Speed: 0 (stationary)
+Damage: 0
+Life: 20 frames
+Visual: Flashing yellow dashed line spanning the entire screen through the bullet's origin point; flickers with a sin wave
+Laser Beam (isLaserBeam)
+Size: 8×8
+Speed: 30
+Damage: 60
+Life: 25 frames
+Visual: Full screen-spanning line with orange outer glow (width 20) → orange core (width 12) → white inner line (width 4); follows the guidance line from isLaserWarning
+Laser Bullet (isLaserBullet)
+Visual: Orange rectangle with white inner rect, orange glow (#ff8800)
+Life-fading over 60 frames
+(Secondary beam bullet type used in Machine of the Void laser bomb explosions)
+Summary table
+Type	Flag	Size	Damage	Visual colour
+Normal	(player)	4×10	25	Cyan / orange (rapid fire)
+Tracking	(player)	6×6	20	Purple
+Tracking overflow	(player)	8×8	75	Magenta pulsing
+Standard	(none)	5–8	28–52	Red rectangle
+Drone	isDroneBullet	8×8	65	Bright green
+Void	isVoidBullet	8–12	32–80	Purple
+Fast void	isFastVoid	8–12	32–80	Hot pink + trail
+Teleport void	isTeleportBullet	8–10	capped 45	Purple + teleports
+Regular+	isRegularPlus	8–10	40–85	Orange-red + drain
+Bomb bullet	isBombBullet	4–8	30–85	Red / orange-red
+Knight bullet	isKnightBullet	7–12	44–62	Red rectangle
+Mark III bullet	isMarkIIIBullet	6–9	40–60	Pink-red
+Missile	isMissile	12×12	60	Grey/red/yellow
+Cluster bullet	isClusterBullet	6×6	35	Orange
+Self-destruct	isSelfDestructBullet	5–8	40–50	Red/pink
+Laser segment	isLaser	20×20	95	Red
+Advanced laser	isAdvancedLaser	25×25	120	Orange
+Laser pulse	isLaserPulse	40×40	150	Orange ring + purple
+Laser warning	isLaserWarning	2×2	0	Yellow dashed line
+Laser beam	isLaserBeam	8×8	60	White/orange full-screen
+Laser bullet	isLaserBullet	varies	varies	Orange rectangle

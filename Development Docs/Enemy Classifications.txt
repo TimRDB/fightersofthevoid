@@ -1,0 +1,65 @@
+I'd like to reclassify the enemies into new classes in the following ways and have them labelled accordingly -
+
+Controlled Human
+
+This class includes the following enemies so far:
+Basic
+Fast
+Heavy
+Zigzag
+Sniper
+Elite
+Drone
+Dreadnought
+Asteroid Layer
+Mini Asteroid Layer
+
+Void Corrupted
+
+This class includes the following enemies so far:
+Void Normal
+Void Drone
+Void Soldier
+Void Sniper
+Void Warrior
+Void Master
+Void Dreadnought
+Void Asteroid Layer
+
+Defender
+
+Defender Normal
+Defender Fast
+Defender Heavy
+Defender Zigzag
+Defender Sniper
+Defender Elite
+Defender Warship (formerly warship)
+Defender Fighter Jet
+
+Void Pure
+
+Void Protector
+Void Turret
+
+There's also another distinction which I'm not sure how to implement, maybe you can think of a good way to do it.  Most of the enemies are from this universe or dimension but some of the ships have been brought through to this universe or dimension through void portals.  The following enemies are corrupted by the void but represent ships from different universes or dimensions - 
+
+Void Soldier
+Void Warrior
+Void Master
+
+I haven't decided if this extra classification attribute changes anything in particular about these enemies but I just want it noted that they represent ships corrupted by the void and brought through void portals into this universe or dimension.  This sub classification can be an additional label or classifying extra information of "Foreign Dimension".  Also The Gatekeeper has it's own sub-classification of "Multiple Dimensions".  The player is part of a classification of merely "Human".
+
+Asteroids are classed as "Normal" objects.  Void asteroids are called as "Void Corrupted" objects.  The Mark II Destroyer's bomb is classed as a "Normal" object.
+
+Also the bosses belong to the following classes -
+
+Destroyer Mark  I - Controlled Human
+The Knight - Void Corrupted (Foreign Dimension)
+Destroyer Mark II - Controlled Human
+The Count - Void Corrupted (Foreign Dimension)
+Destroyer Mark III Prototype - Defender
+Machine Of The Void - Void Corrupted
+The Gatekeeper - Void Corrupted (Multiple Dimensions)
+
+Please do your best to classify enemies in this manner in an organised, rational and reasonable way.  Let me know if I have left anything out.

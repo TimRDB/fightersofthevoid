@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\\\\assets\\\\\" -Recurse | Where-Object { $_.Length -gt 500000 } | Select-Object Name, @{Name=\"SizeMB\";Expression={[math]::Round\\($_.Length/1MB,2\\)}} | Sort-Object SizeMB -Descending | Select-Object -First 20)"
+    ]
+  }
+}

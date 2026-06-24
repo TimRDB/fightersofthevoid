@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fighters Of The Void — Balance Report v59</title>
+<style>
+  :root {
+    --bg: #0f0f14;
+    --surface: #16161f;
+    --surface2: #1c1c28;
+    --border: #2a2a3e;
+    --text: #d4d4e8;
+    --muted: #6b7280;
+    --head: #a78bfa;
+    --accent: #7dd3fc;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Consolas, 'Courier New', monospace; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.6; padding: 32px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  h1 { font-size: 1.8em; color: var(--head); padding-bottom: 8px; border-bottom: 2px solid var(--border); margin-bottom: 4px; }
+  h2 { font-size: 1.2em; color: var(--accent); margin: 36px 0 12px; padding: 6px 0 6px 12px; border-left: 3px solid var(--accent); background: var(--surface); }
+  h3 { font-size: 1em; color: var(--head); margin: 20px 0 8px; }
+  h4 { font-size: 0.92em; color: var(--warn); margin: 14px 0 6px; }
+
+  .report-meta { color: var(--muted); font-size: 0.85em; margin-bottom: 28px; }
+
+  /* TOC */
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 16px 20px; margin-bottom: 32px; display: inline-block; min-width: 300px; }
+  .toc-title { color: var(--head); font-weight: bold; margin-bottom: 8px; }
+  .toc ol { padding-left: 18px; }
+  .toc li { margin: 3px 0; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 0.88em; }
+  th { background: var(--surface2); color: var(--accent); text-align: left; padding: 7px 10px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #1a1a26; }
+
+  /* Sections */
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 16px 20px; margin-bottom: 16px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  /* Value tags */
+  .v-good { color: var(--good); font-weight: bold; }
+  .v-warn { color: var(--warn); font-weight: bold; }
+  .v-bad  { color: var(--danger); font-weight: bold; }
+  .v-num  { color: var(--accent); font-weight: bold; }
+  .v-dim  { color: var(--muted); }
+
+  /* KV pairs */
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; }
+  dt { color: var(--muted); }
+  dd { color: var(--text); }
+
+  /* Notes/callouts */
+  .note   { background: #1a1f2e; border-left: 3px solid var(--accent); padding: 8px 12px; margin: 8px 0; font-size: 0.88em; }
+  .warn   { background: #1f1a14; border-left: 3px solid var(--warn);  padding: 8px 12px; margin: 8px 0; font-size: 0.88em; }
+  .danger { background: #1f1414; border-left: 3px solid var(--red);   padding: 8px 12px; margin: 8px 0; font-size: 0.88em; }
+  .good   { background: #141f17; border-left: 3px solid var(--good);  padding: 8px 12px; margin: 8px 0; font-size: 0.88em; }
+
+  /* Phase pills */
+  .ph1 { color: #86efac; }
+  .ph2 { color: var(--warn); }
+  .ph3 { color: var(--danger); }
+
+  /* Faction labels */
+  .f-human   { background: #1e3353; color: #93c5fd; padding: 1px 6px; border-radius: 3px; font-size: 0.8em; }
+  .f-void    { background: #2d1a4a; color: #c4b5fd; padding: 1px 6px; border-radius: 3px; font-size: 0.8em; }
+  .f-asteroid{ background: #2a1f10; color: #fbbf24; padding: 1px 6px; border-radius: 3px; font-size: 0.8em; }
+  .f-defender{ background: #1a2e20; color: #86efac; padding: 1px 6px; border-radius: 3px; font-size: 0.8em; }
+  .f-boss    { background: #3a1414; color: #fca5a5; padding: 1px 6px; border-radius: 3px; font-size: 0.8em; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+  .rec-block { border: 1px solid var(--border); border-radius: 4px; margin: 8px 0; padding: 12px 16px; }
+  .rec-block h4 { margin-top: 0; }
+  .rec-num { display: inline-block; background: var(--head); color: #000; border-radius: 2px; padding: 0 5px; margin-right: 6px; font-weight: bold; font-size: 0.9em; }
+
+  ul.plain { list-style: none; padding-left: 0; }
+  ul.plain li { padding: 2px 0; }
+  ul.plain li::before { content: "– "; color: var(--muted); }
+
+  footer { margin-top: 48px; color: var(--muted); font-size: 0.8em; border-top: 1px solid var(--border); padding-top: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Fighters Of The Void — Balance Report</h1>
+<div class="report-meta">Version 59 &nbsp;·&nbsp; Generated 2026-06-03 &nbsp;·&nbsp; Internal design document</div>
+
+<div class="toc">
+  <div class="toc-title">Contents</div>
+  <ol>
+    <li><a href="#s-player">Player</a></li>
+    <li><a href="#s-enemies">Enemies</a></li>
+    <li><a href="#s-bullets">Bullets</a></li>
+    <li><a href="#s-bosses">Bosses</a></li>
+    <li><a href="#s-powerups">Powerups</a></li>
+    <li><a href="#s-levels">Levels &amp; Wave Structure</a></li>
+    <li><a href="#s-difficulty">Difficulty System</a></li>
+    <li><a href="#s-firerates">Fire Rate Analysis</a></li>
+    <li><a href="#s-analysis">Balance Analysis &amp; Recommendations</a></li>
+    <li><a href="#s-gatekeeper">Gatekeeper Fix</a></li>
+  </ol>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-player">1. Player</h2>
+
+<div class="two-col">
+<div class="section">
+  <h3>Health &amp; Survival</h3>
+  <dl>
+    <dt>Starting HP</dt><dd><span class="v-num">100</span></dd>
+    <dt>Max HP (base)</dt><dd><span class="v-num">100</span></dd>
+    <dt>Max HP (upgraded)</dt><dd><span class="v-num">200</span></dd>
+    <dt>Max Shield</dt><dd><span class="v-num">80</span></dd>
+    <dt>Shield recharge</dt><dd>Via shield powerup only</dd>
+    <dt>HP regen (Easy)</dt><dd><span class="v-good">+1 HP every 30 frames</span> (~0.5s)</dd>
+    <dt>HP regen (Medium)</dt><dd><span class="v-warn">+1 HP every 60 frames</span> (~1.0s)</dd>
+    <dt>HP regen (Hard)</dt><dd><span class="v-bad">+1 HP every 120 frames</span> (~2.0s)</dd>
+  </dl>
+</div>
+<div class="section">
+  <h3>Movement</h3>
+  <dl>
+    <dt>Base speed</dt><dd><span class="v-num">5</span> px/frame</dd>
+    <dt>With speed_up</dt><dd><span class="v-num">+2</span> per powerup (permanent)</dd>
+    <dt>With speed_down</dt><dd><span class="v-bad">−2</span> per powerup (timed, 300 frames)</dd>
+    <dt>Player size</dt><dd>24 × 26 px</dd>
+    <dt>Spawn position</dt><dd>x=400, y=500 (bottom centre)</dd>
+  </dl>
+  <h4>Controls</h4>
+  <dl>
+    <dt>Move Left</dt><dd>A / Left Arrow</dd>
+    <dt>Move Right</dt><dd>D / Right Arrow</dd>
+    <dt>Move Up</dt><dd>W / Up Arrow</dd>
+    <dt>Move Down</dt><dd>S / Down Arrow</dd>
+    <dt>Fire</dt><dd>Spacebar</dd>
+  </dl>
+</div>
+</div>
+
+<h3>Attack Systems</h3>
+<table>
+  <thead><tr><th>System</th><th>Damage</th><th>Speed</th><th>Size (px)</th><th>Colour</th><th>Fire Rate</th><th>Max Level</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Standard Gun (FP 1–5)</td><td class="v-num">25</td><td>8 px/f</td><td>4 × 10</td><td>Cyan</td><td>200 ms (5/s)</td><td>FP 5</td><td>Spread widens by 5.7° per FP level; orange glow during rapid fire</td></tr>
+    <tr><td>Rapid Fire (active)</td><td class="v-num">25</td><td>8 px/f</td><td>4 × 10</td><td>Cyan + orange glow</td><td class="v-good">80 ms (12.5/s)</td><td>—</td><td>240-frame duration (4 s at 60 fps)</td></tr>
+    <tr><td>Tracking Gun</td><td class="v-num">20</td><td>6 px/f</td><td>6 × 6</td><td>Purple</td><td>400 ms (2.5/s)</td><td>3 guns</td><td>Tracks nearest enemy; tracking strength 0.15/f; max life 180 frames</td></tr>
+    <tr><td>Curved Gun Tier 1</td><td class="v-num">20</td><td>7 px/f</td><td>2 × 12</td><td>Yellow</td><td>280 ms</td><td>—</td><td>Centre turret; uses player movement bias</td></tr>
+    <tr><td>Curved Gun Tier 2</td><td class="v-num">15 × 2</td><td>7 px/f</td><td>2 × 7</td><td>Yellow</td><td>280 ms</td><td>—</td><td>Inner side turrets; ±1.5 lateral speed</td></tr>
+    <tr><td>Curved Gun Tier 3</td><td class="v-num">11 × 2</td><td>7 px/f</td><td>2 × 6</td><td>Yellow</td><td>280 ms</td><td>—</td><td>Outer turrets; ±3.2 lateral speed</td></tr>
+    <tr><td>Overflow Laser</td><td class="v-num">High</td><td>Variable</td><td>Large</td><td>White/glow</td><td>On pickup</td><td>—</td><td>Fires when FP ≥5 and another FP powerup is collected; tracking upward</td></tr>
+  </tbody>
+</table>
+
+<div class="section">
+  <h3>DPS Estimates (Standard Gun, no rapid fire)</h3>
+  <table>
+    <thead><tr><th>Firepower Level</th><th>Bullets/Shot</th><th>Damage/Shot</th><th>DPS (200ms)</th><th>DPS (80ms Rapid)</th></tr></thead>
+    <tbody>
+      <tr><td>FP 1</td><td>1</td><td>25</td><td class="v-num">125</td><td class="v-good">312</td></tr>
+      <tr><td>FP 2</td><td>2</td><td>50</td><td class="v-num">250</td><td class="v-good">625</td></tr>
+      <tr><td>FP 3</td><td>3</td><td>75</td><td class="v-num">375</td><td class="v-good">937</td></tr>
+      <tr><td>FP 4</td><td>4</td><td>100</td><td class="v-num">500</td><td class="v-good">1250</td></tr>
+      <tr><td>FP 5</td><td>5</td><td>125</td><td class="v-num">625</td><td class="v-good">1562</td></tr>
+    </tbody>
+  </table>
+  <div class="note">Tracking guns add ~50 DPS per gun at 3 guns active. Curved gun adds up to ~268 DPS (all tiers firing, 280ms rate).</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-enemies">2. Enemies</h2>
+
+<h3>Human Faction <span class="f-human">Human</span> — Levels 1–2</h3>
+<table>
+  <thead>
+    <tr><th>Type</th><th>Width</th><th>Height</th><th>HP</th><th>Speed</th><th>Fire Rate (ms)</th><th>Bullets/Shot</th><th>Pattern</th><th>Movement</th><th>Points</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Basic</td><td>25</td><td>25</td><td class="v-num">30</td><td>2.0</td><td>1500</td><td>1</td><td>Single aimed</td><td>Straight descent</td><td>10</td></tr>
+    <tr><td>Fast</td><td>20</td><td>20</td><td class="v-num">20</td><td class="v-warn">4.0</td><td>1000</td><td>1</td><td>Single aimed</td><td>Fast straight descent</td><td>15</td></tr>
+    <tr><td>Heavy</td><td>40</td><td>40</td><td class="v-num">80</td><td>1.0</td><td>2000</td><td>3</td><td>Triple spread</td><td>Slow straight descent</td><td>25</td></tr>
+    <tr><td>Zigzag</td><td>30</td><td>30</td><td class="v-num">40</td><td>2.5</td><td>1200</td><td>spread</td><td>Spread</td><td>Zigzag descent</td><td>20</td></tr>
+    <tr><td>Sniper</td><td>25</td><td>35</td><td class="v-num">35</td><td>1.5</td><td>2500</td><td>1</td><td>Aimed precision</td><td>Slow descent</td><td>30</td></tr>
+    <tr><td>Elite</td><td>50</td><td>45</td><td class="v-num">200</td><td>1.5</td><td>1800</td><td>burst</td><td>Elite burst</td><td>Slow descent</td><td>50</td></tr>
+    <tr><td>Drone</td><td>15</td><td>15</td><td class="v-num">15</td><td>3.5</td><td>800</td><td>1</td><td>Single</td><td>Fast descent</td><td>8</td></tr>
+    <tr><td>Dreadnought</td><td>120</td><td>80</td><td class="v-num">750</td><td>0.5</td><td>700</td><td>cone</td><td>Turret cone</td><td>Slow crawl</td><td>200</td></tr>
+    <tr><td>Fighter Jet</td><td>14</td><td>22</td><td class="v-num">20</td><td>4.2</td><td>2400</td><td>1</td><td>Jet shot</td><td>Fast diagonal</td><td>15</td></tr>
+  </tbody>
+</table>
+
+<h3>Void Faction <span class="f-void">Void</span> — Levels 2–5</h3>
+<table>
+  <thead>
+    <tr><th>Type</th><th>Width</th><th>Height</th><th>HP</th><th>Speed</th><th>Fire Rate (ms)</th><th>Pattern</th><th>Movement / Special</th><th>Points</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Void Normal</td><td>25</td><td>25</td><td class="v-num">52</td><td>2.0</td><td>750</td><td>Void single</td><td>Standard descent</td><td>12</td></tr>
+    <tr><td>Void Drone</td><td>15</td><td>15</td><td class="v-num">15</td><td>3.5</td><td>800</td><td>Single</td><td>Fast descent</td><td>10</td></tr>
+    <tr><td>Void Soldier</td><td>32</td><td>45</td><td class="v-num">35</td><td>3.0</td><td>1100 <span class="v-bad">(variant: 700)</span></td><td>Dual cone</td><td>Erratic; teleports (0.2% per frame)</td><td>25</td></tr>
+    <tr><td>Void Sniper</td><td>26</td><td>38</td><td class="v-num">60</td><td>1.0</td><td class="v-warn">733</td><td>Sniper shot</td><td>Slow descent; fires ~3× faster than human sniper</td><td>40</td></tr>
+    <tr><td>Void Warrior</td><td>80</td><td>50</td><td class="v-num">120</td><td>1.5</td><td>1800</td><td>Warrior teleport</td><td>Dual body structure; teleports during attack</td><td>60</td></tr>
+    <tr><td>Void Master</td><td>36</td><td>50</td><td class="v-num">220</td><td>2.5</td><td>900</td><td>Triple shot</td><td>Teleports (0.4% per frame); activates shields randomly; 2–4 teleports/encounter</td><td>90</td></tr>
+    <tr><td>Void Dreadnought</td><td>120</td><td>80</td><td class="v-num">1285</td><td>0.5</td><td class="v-warn">490</td><td>Turret cone</td><td>Spawns fighter drones (every 4000ms); fast turret fire</td><td>320</td></tr>
+    <tr><td>Void Protector</td><td>88</td><td>88</td><td class="v-num">1400</td><td>0.1</td><td>9999 (passive)</td><td>Shield cast</td><td>Casts 2000 HP shield on nearby allies (420px range); charge: 150 frames; cooldown: 380 frames</td><td>350</td></tr>
+    <tr><td>Void Turret</td><td>44</td><td>44</td><td class="v-num">330</td><td>0.6</td><td>9999 (timed)</td><td>Pattern cycle</td><td>Stationary; 3 patterns: circle burst, fan spread, spin attack; also fires aimed shots</td><td>80</td></tr>
+  </tbody>
+</table>
+
+<h3>Asteroid Faction <span class="f-asteroid">Asteroid</span> — Level 4</h3>
+<table>
+  <thead>
+    <tr><th>Type</th><th>Width</th><th>Height</th><th>HP</th><th>Speed</th><th>Fire Rate (ms)</th><th>Pattern</th><th>Notes</th><th>Points</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Asteroid Layer</td><td>88</td><td>55</td><td class="v-num">450</td><td>0.8</td><td>4000</td><td>Spread</td><td>Large, slow-moving</td><td>150</td></tr>
+    <tr><td>Mini Asteroid Layer</td><td>66</td><td>42</td><td class="v-num">192</td><td class="v-warn">4.8</td><td>9999</td><td>Rush / burst</td><td>35% chance to drop 2 instead of 1; drop interval: 18 frames</td><td>120</td></tr>
+    <tr><td>Void Asteroid Layer</td><td>88</td><td>55</td><td class="v-num">480</td><td>0.7</td><td>4200</td><td>Void spread</td><td>Hybrid void/asteroid properties</td><td>220</td></tr>
+  </tbody>
+</table>
+
+<h3>Defender Faction <span class="f-defender">Defender</span> — Level 5</h3>
+<table>
+  <thead>
+    <tr><th>Type</th><th>Width</th><th>Height</th><th>HP</th><th>Speed</th><th>Fire Rate (ms)</th><th>Pattern</th><th>Movement Behaviour</th><th>Points</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Defender Normal</td><td>28</td><td>28</td><td class="v-num">45</td><td>2.2</td><td>1400</td><td>Normal shot</td><td>Sinusoidal drift (side-to-side)</td><td>18</td></tr>
+    <tr><td>Defender Fast</td><td>22</td><td>26</td><td class="v-num">30</td><td class="v-warn">4.5</td><td>900</td><td>Burst</td><td>Zigzag right drift</td><td>22</td></tr>
+    <tr><td>Defender Heavy</td><td>48</td><td>42</td><td class="v-num">120</td><td>1.2</td><td>2200</td><td>Cluster</td><td>Arched descent</td><td>40</td></tr>
+    <tr><td>Defender Zigzag</td><td>32</td><td>32</td><td class="v-num">55</td><td>2.8</td><td>1100</td><td>Spread</td><td>Zigzag left drift</td><td>28</td></tr>
+    <tr><td>Defender Sniper</td><td>26</td><td>40</td><td class="v-num">50</td><td>1.8</td><td>2800</td><td>Precision aimed</td><td>Horizontal sine sweep while descending</td><td>38</td></tr>
+    <tr><td>Defender Elite</td><td>58</td><td>50</td><td class="v-num">280</td><td>1.6</td><td>1600</td><td>Assault burst</td><td>Tactical arched descent</td><td>75</td></tr>
+  </tbody>
+</table>
+
+<div class="warn">
+  <strong>Void Soldier variant note:</strong> 25% of Void Soldiers spawn with a special variant fire rate of 700ms (vs. 1100ms). This is a 57% increase in fire speed and is not flagged visually to the player.
+</div>
+<div class="warn">
+  <strong>Void Protector note:</strong> The 2000 HP shield it casts on allies effectively makes shielded enemies tankier than most bosses. A shielded Void Dreadnought with its own 1285 HP + 2000 shield = 3285 effective HP. Multiple Protectors can compound this.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-bullets">3. Bullets — Complete Reference</h2>
+
+<h3>Player Bullets</h3>
+<table>
+  <thead>
+    <tr><th>Bullet Type</th><th>Damage</th><th>Speed (px/f)</th><th>Size (px)</th><th>Colour</th><th>Special</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Standard bullet</td><td>25</td><td>8</td><td>4 × 10</td><td>Cyan (#00ffff)</td><td>Fired upward; spread angle 5.7° per FP level</td></tr>
+    <tr><td>Standard (rapid fire)</td><td>25</td><td>8</td><td>4 × 10</td><td>Cyan + orange glow overlay</td><td>Same bullet, visual glow added during rapid fire powerup</td></tr>
+    <tr><td>Tracking bullet</td><td>20</td><td>6</td><td>6 × 6</td><td>Purple with targeting ring</td><td>Adjusts trajectory by 0.15× per frame toward nearest enemy; max life 180f; enhanced glow on overflow</td></tr>
+    <tr><td>Tracking overflow burst</td><td>~20 each</td><td>Variable</td><td>6 × 6</td><td>Purple</td><td>12 bullets fired in all directions on overflow; triggered when tracking gun count exceeds max</td></tr>
+    <tr><td>Curved gun – tier 1</td><td>20</td><td>7 base</td><td>2 × 12</td><td>Yellow / lightning texture</td><td>Centre turret; influenced by horizontal movement direction</td></tr>
+    <tr><td>Curved gun – tier 2</td><td>15</td><td>7 base + ±1.5 lateral</td><td>2 × 7</td><td>Yellow</td><td>Inner side turrets; slight curve outward</td></tr>
+    <tr><td>Curved gun – tier 3</td><td>11</td><td>7 base + ±3.2 lateral</td><td>2 × 6</td><td>Yellow</td><td>Outer turrets; wider curve</td></tr>
+    <tr><td>Overflow laser</td><td>High (exact TBD)</td><td>Variable</td><td>Large</td><td>White with glow</td><td>Fires on extra FP pickup when already at max FP; large tracking beam upward</td></tr>
+  </tbody>
+</table>
+
+<h3>Enemy Bullets</h3>
+<table>
+  <thead>
+    <tr><th>Pattern Name</th><th>Est. Damage</th><th>Speed</th><th>Count</th><th>Colour / Visual</th><th>Fired By</th><th>Behaviour</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>single</td><td>5–10</td><td>Moderate</td><td>1</td><td>Red/orange</td><td>Basic, Fast, Drone, Void Drone</td><td>Straight down or aimed at player</td></tr>
+    <tr><td>triple</td><td>5–10 each</td><td>Moderate</td><td>3</td><td>Orange</td><td>Heavy</td><td>Tight spread, aimed downward</td></tr>
+    <tr><td>spread</td><td>5–10 each</td><td>Moderate</td><td>Multiple</td><td>Orange fan</td><td>Zigzag</td><td>Wide angle fan spread</td></tr>
+    <tr><td>aimed (sniper)</td><td>12–18</td><td>Fast</td><td>1</td><td>Yellow/white</td><td>Sniper, Void Sniper, Defender Sniper</td><td>Direct line to player at fire time</td></tr>
+    <tr><td>elite_burst</td><td>10–20 each</td><td>Fast</td><td>Burst</td><td>Bright orange/red</td><td>Elite, Defender Elite</td><td>Rapid successive bursts; dense pattern</td></tr>
+    <tr><td>void_single</td><td>8–12</td><td>Moderate</td><td>1</td><td>Purple</td><td>Void Normal</td><td>Aimed at player</td></tr>
+    <tr><td>void_dual_cone</td><td>8–12 each</td><td>Moderate</td><td>2</td><td>Purple</td><td>Void Soldier</td><td>Two bullets in downward cone pattern</td></tr>
+    <tr><td>void_sniper_shot</td><td>15–20</td><td>Very fast</td><td>1</td><td>Purple/white</td><td>Void Sniper</td><td>High-speed precision aimed shot</td></tr>
+    <tr><td>void_warrior_teleport</td><td>12–18</td><td>Fast</td><td>Multiple</td><td>Purple burst</td><td>Void Warrior</td><td>Fires at player then teleports; dual body pattern</td></tr>
+    <tr><td>void_master_triple</td><td>12–18 each</td><td>Fast</td><td>3</td><td>Dark purple</td><td>Void Master</td><td>Triple aimed shot; can fire while teleporting</td></tr>
+    <tr><td>dreadnought_turret</td><td>10–15 each</td><td>Moderate-fast</td><td>Cone burst</td><td>Red/orange</td><td>Dreadnought</td><td>Rapid cone pattern from turret; fire rate 700ms</td></tr>
+    <tr><td>void_dreadnought_turret</td><td>12–18 each</td><td>Fast</td><td>Cone burst</td><td>Purple cone</td><td>Void Dreadnought</td><td>Enhanced turret; 490ms fire rate; spawns drones while firing</td></tr>
+    <tr><td>void_turret_main</td><td>10–15 each</td><td>Moderate</td><td>Pattern-based</td><td>Purple</td><td>Void Turret</td><td>3 rotating patterns: circle burst, fan spread, spin attack; also fires aimed shots at player</td></tr>
+    <tr><td>asteroid_spread</td><td>15–25</td><td>Varies</td><td>Fragment spread</td><td>Grey/brown</td><td>Asteroid Layer</td><td>Fragment spread on fire or on destruction</td></tr>
+    <tr><td>mini_asteroid_rush</td><td>10–20</td><td>Very fast (4.8)</td><td>1–2</td><td>Grey/brown</td><td>Mini Asteroid Layer</td><td>Fast-moving small rocks; 35% chance to fire 2 at once</td></tr>
+    <tr><td>void_asteroid_spread</td><td>15–25 each</td><td>Varies</td><td>Fragment spread</td><td>Purple-grey</td><td>Void Asteroid Layer</td><td>Void-type asteroid fragments</td></tr>
+    <tr><td>fighter_jet_shot</td><td>8–12</td><td>Moderate</td><td>1</td><td>Red</td><td>Fighter Jet</td><td>Fired while moving diagonally; angled downward</td></tr>
+    <tr><td>defender_normal_shot</td><td>8–12</td><td>Moderate</td><td>1</td><td>Blue-green</td><td>Defender Normal</td><td>Standard aimed shot; fired during sinusoidal drift</td></tr>
+    <tr><td>defender_fast_burst</td><td>6–10 each</td><td>Fast</td><td>Burst</td><td>Blue-green</td><td>Defender Fast</td><td>Quick burst; fires during zigzag movement</td></tr>
+    <tr><td>defender_heavy_cluster</td><td>12–20 each</td><td>Moderate</td><td>Cluster</td><td>Blue-green</td><td>Defender Heavy</td><td>Cluster bomb; fires large spread</td></tr>
+    <tr><td>defender_zigzag_spread</td><td>8–12 each</td><td>Moderate</td><td>Spread</td><td>Blue-green</td><td>Defender Zigzag</td><td>Spread fired during zigzag movement</td></tr>
+    <tr><td>defender_sniper_precision</td><td>15–22</td><td>Very fast</td><td>1</td><td>Bright blue</td><td>Defender Sniper</td><td>Precision aimed; fired during horizontal sine sweep</td></tr>
+    <tr><td>defender_elite_assault</td><td>15–25 each</td><td>Fast</td><td>Multi-burst</td><td>Blue-green burst</td><td>Defender Elite</td><td>High-density multi-burst assault pattern</td></tr>
+  </tbody>
+</table>
+
+<div class="note">Exact enemy bullet damage values are not hardcoded as named constants — they are embedded within each pattern function. The estimates above are approximated from the pattern logic. Exact values should be verified by reading each pattern function directly for final balancing.</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-bosses">4. Bosses</h2>
+
+<div class="section">
+  <h3>Boss Overview</h3>
+  <table>
+    <thead><tr><th>Boss</th><th>Level</th><th>HP</th><th>Speed</th><th>Dimensions (px)</th><th>Phases</th><th>Phase Triggers</th></tr></thead>
+    <tbody>
+      <tr><td>Mark I Destroyer</td><td>1</td><td class="v-num">5,000</td><td>2.0</td><td>120 × 80</td><td>3</td><td>66.7% and 33.3% HP</td></tr>
+      <tr><td>The Knight</td><td>2</td><td class="v-num">7,500</td><td>1.8</td><td>140 × 100</td><td>3</td><td>66.7% and 33.3% HP</td></tr>
+      <tr><td>Mark II Destroyer</td><td>3</td><td class="v-num">12,000</td><td>1.5</td><td>390 × 145</td><td>3</td><td>66.7% and 33.3% HP</td></tr>
+      <tr><td>The Count</td><td>4</td><td class="v-num">15,000</td><td>1.2</td><td>240 × 175</td><td>3</td><td>66.7% and 33.3% HP</td></tr>
+      <tr><td>Mark III Destroyer</td><td>5</td><td class="v-num">20,000</td><td>1.6</td><td>200 × 150</td><td>3 + self-destruct</td><td>66.7%, 33.3% HP; self-destruct at P3</td></tr>
+      <tr><td>The Gatekeeper</td><td>6 (Final)</td><td class="v-num">30,000</td><td>0.5</td><td>~720 × 300 (90%/50%)</td><td>7+</td><td>Multiple HP thresholds</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Mark I Destroyer — Level 1 Boss</h3>
+<div class="section">
+  <div class="two-col">
+    <div>
+      <dl>
+        <dt>HP</dt><dd>5,000</dd>
+        <dt>Speed</dt><dd>2.0 (horizontal oscillation x:60–740)</dd>
+        <dt>Entrance speed</dt><dd>1.5 (moves to y=100)</dd>
+        <dt>Hover offset</dt><dd>None (Mark I)</dd>
+        <dt>Attack cycle</dt><dd>4 patterns; rotates every 60 frames</dd>
+      </dl>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>Phase</th><th>HP Range</th><th>Fire Rate</th></tr></thead>
+        <tbody>
+          <tr><td class="ph1">Phase 1</td><td>100%–67%</td><td class="v-good">800ms</td></tr>
+          <tr><td class="ph2">Phase 2</td><td>66%–34%</td><td class="v-warn">500ms</td></tr>
+          <tr><td class="ph3">Phase 3</td><td>33%–0%</td><td class="v-bad">300ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <h4>Attack Patterns</h4>
+  <ul class="plain">
+    <li>Pattern 1: Cone spread</li>
+    <li>Pattern 2: Circular burst</li>
+    <li>Pattern 3: Aimed direct shot at player</li>
+    <li>Pattern 4: Rapid wave</li>
+  </ul>
+</div>
+
+<h3>The Knight — Level 2 Boss (Void)</h3>
+<div class="section">
+  <div class="two-col">
+    <div>
+      <dl>
+        <dt>HP</dt><dd>7,500</dd>
+        <dt>Speed</dt><dd>1.8</dd>
+        <dt>Entrance speed</dt><dd>1.2 (moves to y=80)</dd>
+        <dt>Hover</dt><dd>±15px vertical oscillation</dd>
+        <dt>Attack cycle</dt><dd>5 patterns; rotates every 45 frames</dd>
+      </dl>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>Phase</th><th>HP Range</th><th>Fire Rate</th></tr></thead>
+        <tbody>
+          <tr><td class="ph1">Phase 1</td><td>100%–67%</td><td class="v-good">600ms</td></tr>
+          <tr><td class="ph2">Phase 2</td><td>66%–34%</td><td class="v-warn">400ms</td></tr>
+          <tr><td class="ph3">Phase 3</td><td>33%–0%</td><td class="v-bad">250ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <h4>Attack Patterns</h4>
+  <ul class="plain">
+    <li>Laser charge and fire (regular and advanced variants)</li>
+    <li>Aimed multi-bullet pattern</li>
+    <li>Rapid multi-shot</li>
+    <li>Teleport attack (Phase 2+): 480+ frame interval; 1-second visual warning before teleport</li>
+    <li>Energy shield (Phase 3): Randomly activates; 6-second cooldown; 3-second active duration</li>
+  </ul>
+</div>
+
+<h3>Mark II Destroyer — Level 3 Boss</h3>
+<div class="section">
+  <div class="two-col">
+    <div>
+      <dl>
+        <dt>HP</dt><dd>12,000</dd>
+        <dt>Speed</dt><dd>1.5</dd>
+        <dt>Entrance speed</dt><dd>1.2 (moves to y=120)</dd>
+        <dt>Dimensions</dt><dd>390 × 145 px (very wide; side sections ±195)</dd>
+      </dl>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>Phase</th><th>HP Range</th><th>Fire Rate</th></tr></thead>
+        <tbody>
+          <tr><td class="ph1">Phase 1</td><td>100%–67%</td><td class="v-good">600ms</td></tr>
+          <tr><td class="ph2">Phase 2</td><td>66%–34%</td><td class="v-warn">400ms</td></tr>
+          <tr><td class="ph3">Phase 3</td><td>33%–0%</td><td class="v-bad">200ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <h4>Special Mechanics</h4>
+  <ul class="plain">
+    <li>Bomb countdown mechanism — telegraphs before explosive burst</li>
+    <li>Complex cluster bomb patterns</li>
+    <li>Wide horizontal oscillation range</li>
+  </ul>
+</div>
+
+<h3>The Count — Level 4 Boss</h3>
+<div class="section">
+  <div class="two-col">
+    <div>
+      <dl>
+        <dt>HP</dt><dd>15,000</dd>
+        <dt>Speed</dt><dd>1.2</dd>
+        <dt>Entrance speed</dt><dd>1.0 (moves to y=100)</dd>
+        <dt>Dimensions</dt><dd>240 × 175 px (spike arms to ±120)</dd>
+        <dt>Void core</dt><dd>Rotates at 0.05 rad/frame</dd>
+      </dl>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>Phase</th><th>Attack Pause</th><th>Complex Attack Interval</th></tr></thead>
+        <tbody>
+          <tr><td class="ph1">Phase 1</td><td>3000ms</td><td>4800ms</td></tr>
+          <tr><td class="ph2">Phase 2</td><td>2400ms</td><td>3600ms</td></tr>
+          <tr><td class="ph3">Phase 3</td><td>1800ms</td><td>2400ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <h4>Special Mechanics</h4>
+  <ul class="plain">
+    <li>Spiral angle attacks — bullets fired in rotating spiral</li>
+    <li>Wave-based bullet patterns — rolling waves of bullets</li>
+    <li>Teleport bullets — bullets that teleport or home</li>
+    <li>Final attack charging sequence — distinct end-phase assault</li>
+  </ul>
+</div>
+
+<h3>Mark III Destroyer Prototype — Level 5 Boss</h3>
+<div class="section">
+  <div class="two-col">
+    <div>
+      <dl>
+        <dt>HP</dt><dd>20,000</dd>
+        <dt>Speed</dt><dd>1.6</dd>
+        <dt>Entrance speed</dt><dd>1.1 (moves to y=110)</dd>
+        <dt>Dimensions</dt><dd>200 × 150 px</dd>
+      </dl>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>Attack Type</th><th>Phase 1</th><th>Phase 2</th><th>Phase 3</th></tr></thead>
+        <tbody>
+          <tr><td>Cluster bomb rate</td><td>4000ms</td><td>3200ms</td><td>2500ms</td></tr>
+          <tr><td>Laser bomb rate</td><td>8000ms</td><td>6500ms</td><td>5000ms</td></tr>
+          <tr><td>Complex cluster rate</td><td>—</td><td>—</td><td>4800ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <h4>Self-Destruct Sequence (Phase 3 Trigger)</h4>
+  <ul class="plain">
+    <li>Activates at Phase 3 transition</li>
+    <li>Duration: 300 frames (~5 seconds at 60fps)</li>
+    <li>Wave interval: 30 frames (~0.5s between waves)</li>
+    <li>Fires rotating wave spiral during sequence — fills screen</li>
+    <li>Wave angle continuously rotates throughout</li>
+  </ul>
+</div>
+
+<h3>The Gatekeeper — Level 6 Final Boss</h3>
+<div class="section">
+  <div class="two-col">
+    <div>
+      <dl>
+        <dt>HP</dt><dd>30,000</dd>
+        <dt>Speed</dt><dd>0.5 (slowest boss)</dd>
+        <dt>Entrance speed</dt><dd>0.8 (moves to y=60)</dd>
+        <dt>Visual body</dt><dd>Organic oval (rx≈120, ry≈95 in draw code)</dd>
+        <dt>Config dimensions</dt><dd>~720 × 300 px (90% canvas width, 50% height)</dd>
+      </dl>
+    </div>
+    <div>
+      <dl>
+        <dt>Void Corruption</dt><dd>0–1 scale; starts at 0.1 (10%)</dd>
+        <dt>Laser Malfunction</dt><dd>0.1 (broken 10%)</dd>
+        <dt>Laser Cooldown</dt><dd>300 frames between shots</dd>
+        <dt>Attack Chaos</dt><dd>0.1 scale</dd>
+        <dt>Void Bullet Chance</dt><dd>0.2 (20%)</dd>
+        <dt>Regular+ Bullet Chance</dt><dd>0.3 (30%)</dd>
+      </dl>
+    </div>
+  </div>
+  <h4>Phase Structure</h4>
+  <table>
+    <thead><tr><th>Phase</th><th>Approx HP Trigger</th><th>Key Change</th></tr></thead>
+    <tbody>
+      <tr><td class="ph1">Phase 1</td><td>100%–80%</td><td>Basic attacks; Void Corruption low</td></tr>
+      <tr><td class="ph1">Phase 2</td><td>80%–60%</td><td>Laser activated; attack patterns increase</td></tr>
+      <tr><td class="ph2">Phase 3</td><td>60%–40%</td><td>Void Corruption rising; laser + void bullets active</td></tr>
+      <tr><td class="ph2">Phase 4</td><td>40%–25%</td><td>Attack chaos increases; black hole phases possible</td></tr>
+      <tr><td class="ph3">Phase 5+</td><td>25%–0%</td><td class="v-bad">Bullet density becomes unsurvivable; full chaos mode</td></tr>
+    </tbody>
+  </table>
+  <h4>Special Mechanics</h4>
+  <ul class="plain">
+    <li>Void Corruption scale — increases as boss takes damage; affects bullet patterns</li>
+    <li>Laser charge + fire — 300 frame cooldown; can malfunction (0.1 chance)</li>
+    <li>Black hole phases — brief phases that pull/redirect bullets and player</li>
+    <li>Complex fractal bullet patterns in later phases</li>
+    <li>Multiple sub-machine coordination — parts of the boss fire independently</li>
+    <li>Portal victory sequence triggers on defeat</li>
+  </ul>
+  <div class="danger">Phase 5+ produces bullet density that is not survivable regardless of player skill, powerups, or difficulty setting. See Section 10 for specific fix recommendations.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-powerups">5. Powerups</h2>
+
+<table>
+  <thead>
+    <tr><th>Powerup</th><th>Type</th><th>Effect</th><th>Duration</th><th>Max Stack</th><th>Colour</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>firepower</td><td>Permanent</td><td>+1 firepower level (widens bullet spread)</td><td>Permanent</td><td>5 levels</td><td>Red/Pink</td><td>At FP5, additional pickups trigger overflow laser instead</td></tr>
+    <tr><td>rapid_fire</td><td>Timed</td><td>Fire rate: 200ms → 80ms (2.5× speed)</td><td>240 frames (4s)</td><td>Resets timer</td><td>Yellow</td><td>Adds orange glow to bullets visually</td></tr>
+    <tr><td>tracking_gun</td><td>Permanent</td><td>+1 tracking gun (fires independently, homes on enemies)</td><td>Permanent</td><td>3 guns</td><td>Purple</td><td>Each gun fires every 400ms; tracking strength 0.15/frame</td></tr>
+    <tr><td>speed_up</td><td>Permanent</td><td>+2 to player movement speed</td><td>Permanent</td><td>Unlimited</td><td>Green</td><td>Stacks indefinitely (potential balance issue)</td></tr>
+    <tr><td>speed_down</td><td>Timed/Debuff</td><td>−2 to movement speed; slowdown effect at min speed</td><td>300 frames (5s)</td><td>—</td><td>Orange</td><td>Negative powerup — can drop from enemies</td></tr>
+    <tr><td>health_up</td><td>Instant</td><td>+1 HP</td><td>Instant</td><td>Up to max HP cap</td><td>Green cross</td><td>Small incremental heal; also dropped by enemies</td></tr>
+    <tr><td>shield</td><td>Instant</td><td>Restores shield to maximum (80)</td><td>Instant</td><td>One shield max</td><td>Cyan</td><td>Shield absorbs damage before HP; recharges fully on pickup</td></tr>
+  </tbody>
+</table>
+
+<h3>Drop Rates &amp; Distributions</h3>
+<div class="section">
+  <table>
+    <thead>
+      <tr><th>Enemy Type</th><th>Drop Chance (General)</th><th>Notable Specific Drops</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Basic / Fast / Drone</td><td>Low (~10–15%)</td><td>health_up, speed_up</td></tr>
+      <tr><td>Heavy / Zigzag / Sniper</td><td>Medium (~20%)</td><td>rapid_fire, health_up</td></tr>
+      <tr><td>Elite (Human)</td><td class="v-warn">High (~40%)</td><td>tracking_gun (40%), firepower</td></tr>
+      <tr><td>Void Soldier (standard)</td><td>Medium</td><td>General powerups</td></tr>
+      <tr><td>Void Soldier (variant)</td><td class="v-warn">Higher</td><td>Slightly better drops</td></tr>
+      <tr><td>Void Master</td><td class="v-warn">High (~50–60%)</td><td>tracking_gun, firepower</td></tr>
+      <tr><td>Void Protector</td><td>High (worth ~350pts)</td><td>Major drops on kill</td></tr>
+      <tr><td>Void Dreadnought</td><td>High</td><td>Significant powerup drop</td></tr>
+      <tr><td>Defender Elite</td><td class="v-warn">High (~60%)</td><td>tracking_gun, firepower, rapid_fire</td></tr>
+      <tr><td>Bosses</td><td>100% on death</td><td>Multiple drops; health_up, shield, powerups</td></tr>
+      <tr><td>Ambient (all levels)</td><td>~0.003/frame passive</td><td>tracking_gun ambient spawn (~1.8/min at 60fps) — levels 1–2 only</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">
+    <strong>Speed_up stacking issue:</strong> speed_up is permanent and has no cap. Players who collect many can move faster than the game was designed for, potentially trivialising dodge requirements. Consider capping at 3–4 stacks (base speed 11–13).
+  </div>
+  <div class="note">
+    Tracking gun ambient spawning in levels 1–2 means players can acquire tracking guns without killing elite enemies, reducing the intended gating on that system.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-levels">6. Levels &amp; Wave Structure</h2>
+
+<div class="section">
+  <h3>Level Overview</h3>
+  <table>
+    <thead><tr><th>Level</th><th>Name</th><th>Progress Units</th><th>Phases</th><th>Boss</th><th>Boss HP</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Human Tutorial</td><td>8,000</td><td>5</td><td>Mark I Destroyer</td><td>5,000</td></tr>
+      <tr><td>2</td><td>Void Emergence</td><td>8,000</td><td>5</td><td>The Knight</td><td>7,500</td></tr>
+      <tr><td>3</td><td>Void Invasion</td><td>12,000</td><td>5</td><td>Mark II Destroyer</td><td>12,000</td></tr>
+      <tr><td>4</td><td>Asteroid &amp; Void Convergence</td><td>15,000</td><td>6</td><td>The Count</td><td>15,000</td></tr>
+      <tr><td>5</td><td>Defender Invasion &amp; Final Void</td><td>20,000</td><td>6</td><td>Mark III Destroyer</td><td>20,000</td></tr>
+      <tr><td>6</td><td>Final Void Gauntlet</td><td>28,000</td><td>8+</td><td>The Gatekeeper</td><td>30,000</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Level 1 — Human Tutorial (Progress: 8,000)</h3>
+<div class="section">
+  <table>
+    <thead><tr><th>Phase / Range</th><th>Enemy Mix</th></tr></thead>
+    <tbody>
+      <tr><td>0–20% (0–1,600)</td><td>100% Basic</td></tr>
+      <tr><td>20–40% (1,600–3,200)</td><td>70% Basic, 30% Fast</td></tr>
+      <tr><td>40–60% (3,200–4,800)</td><td>40% Basic, mixed Fast / Heavy</td></tr>
+      <tr><td>60–80% (4,800–6,400)</td><td>30% Fast, 30% Heavy, 40% Zigzag</td></tr>
+      <tr><td>80–100% (6,400–8,000)</td><td>20% Heavy, 30% Zigzag, 50% Sniper</td></tr>
+      <tr><td>Boss</td><td>Mark I Destroyer (5,000 HP) + wave enemies</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Level 2 — Void Emergence (Progress: 8,000)</h3>
+<div class="section">
+  <table>
+    <thead><tr><th>Phase / Range</th><th>Enemy Mix</th></tr></thead>
+    <tbody>
+      <tr><td>0–15% (0–1,200)</td><td>70% Basic, 30% Drone</td></tr>
+      <tr><td>15–35% (1,200–2,800)</td><td>45% Basic, 30% Fast, 25% Drone, 15% Elite</td></tr>
+      <tr><td>35–55% (2,800–4,400)</td><td>30% Basic, 20% Fast, 20% Heavy, 15% Drone, 15% Elite</td></tr>
+      <tr><td>55–75% (4,400–6,000)</td><td>20% Fast, 20% Heavy, 20% Zigzag, 15% Drone, 25% Elite</td></tr>
+      <tr><td>75–100% (6,000–8,000)</td><td>15% Heavy, 20% Zigzag, 30% Sniper, 15% Drone, 20% Elite</td></tr>
+      <tr><td>Boss</td><td>The Knight (7,500 HP)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Level 3 — Void Invasion (Progress: 12,000)</h3>
+<div class="section">
+  <table>
+    <thead><tr><th>Phase / Range</th><th>Enemy Mix</th></tr></thead>
+    <tbody>
+      <tr><td>0–10% (0–1,200)</td><td>100% Void Soldier</td></tr>
+      <tr><td>10–25% (1,200–3,000)</td><td>70% Void Soldier, 30% Void Sniper</td></tr>
+      <tr><td>25–45% (3,000–5,400)</td><td>55% Void Soldier, 20% Void Warrior, 25% Void Sniper</td></tr>
+      <tr><td>45–70% (5,400–8,400)</td><td>45% Void Soldier, 20% Void Warrior, 15% Dreadnought, 20% Void Sniper</td></tr>
+      <tr><td>70–100% (8,400–12,000)</td><td>20% Void Soldier, 10% Void Master, 30% Void Warrior, 20% Dreadnought, 20% Void Sniper</td></tr>
+      <tr><td>Boss</td><td>Mark II Destroyer (12,000 HP)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Level 4 — Asteroid &amp; Void Convergence (Progress: 15,000)</h3>
+<div class="section">
+  <table>
+    <thead><tr><th>Phase / Range</th><th>Enemy Mix</th></tr></thead>
+    <tbody>
+      <tr><td>0–16.7% (0–2,500)</td><td>100% Asteroid Layer</td></tr>
+      <tr><td>16.7–33.3% (2,500–5,000)</td><td>50% Asteroid Layer, 30% Void Turret, 20% Void Master</td></tr>
+      <tr><td>33.3–50% (5,000–7,500)</td><td>50% Void Turret, 30% Void Master, 20% Asteroid Layer</td></tr>
+      <tr><td>50–66.7% (7,500–10,000)</td><td>65% Mini Asteroid Layer, 35% Asteroid Layer</td></tr>
+      <tr><td>66.7–83.3% (10,000–12,500)</td><td>10% Dreadnought, 40% Mini Asteroid Layer, 20% Void Sniper, 20% Void Master, 10% Void Soldier</td></tr>
+      <tr><td>83.3–100% (12,500–15,000)</td><td>10% Dreadnought, 30% Mini Asteroid Layer, 10% Void Sniper, 10% Void Master, 10% Void Soldier, 10% Asteroid Layer, 30% Void Protector</td></tr>
+      <tr><td>Boss</td><td>The Count (15,000 HP)</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">The final phase of Level 4 introduces Void Protectors at 30% weight. A Protector in the final stretch can shield Dreadnoughts and Masters, creating effective enemy HP pools of 3,000–4,000+ per unit just before the boss.</div>
+</div>
+
+<h3>Level 5 — Defender Invasion &amp; Final Void (Progress: 20,000)</h3>
+<div class="section">
+  <table>
+    <thead><tr><th>Phase</th><th>Range</th><th>Enemy Mix</th></tr></thead>
+    <tbody>
+      <tr><td>Phase 1</td><td>0–16.7%</td><td>35% Void Turret, 27% Void Warrior, 20% Defender Normal, 18% Defender Fast</td></tr>
+      <tr><td>Phase 2</td><td>16.7–33.3%</td><td>28% Void Turret, 20% Void Warrior, 12% Void Master, 14% Defender Normal, 12% Defender Fast, 14% Defender Zigzag</td></tr>
+      <tr><td>Phase 3</td><td>33.3–50%</td><td>22% Void Turret, 16% Void Warrior, 12% Void Master, 8% Void Sniper, 10% Defender Normal, 8% Defender Fast, 9% Defender Zigzag, 8% Defender Heavy, 7% Defender Sniper</td></tr>
+      <tr><td>Phase 4</td><td>50–66.7%</td><td>20% Void Turret, 13% Void Master, 10% Asteroid Layer, 10% Defender Fast, 10% Defender Heavy, 10% Defender Zigzag, 9% Defender Sniper, 9% Void Sniper, 9% Defender Normal</td></tr>
+      <tr><td>Phase 5</td><td>66.7–83.3%</td><td>18% Void Turret, 12% Void Master, 8% Asteroid Layer, 10% Defender Heavy, 9% Defender Sniper, 9% Defender Elite, 8% Void Warrior, 9% Dreadnought, 9% Defender Zigzag, 8% Void Sniper</td></tr>
+      <tr><td>Phase 6</td><td>83.3–100%</td><td>15% Void Turret, 11% Void Master, 8% Asteroid Layer, 10% Defender Elite, 9% Defender Heavy, 8% Defender Sniper, 9% Dreadnought, 8% Defender Fast, 8% Void Warrior, 6% Defender Zigzag, 8% Void Sniper</td></tr>
+      <tr><td>Boss</td><td>—</td><td>Mark III Destroyer (20,000 HP)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Level 6 — Final Void Gauntlet (Progress: 28,000)</h3>
+<div class="section">
+  <div class="warn">Level 6 enemy phase content is currently incomplete or placeholder. Enemy spawning during phases is limited or absent, with density concentrated in later phases before the Gatekeeper boss fight.</div>
+  <ul class="plain">
+    <li>8 defined phases; most are sparse or empty in current build</li>
+    <li>Boss: The Gatekeeper (30,000 HP)</li>
+    <li>Boss begins after 28,000 progress units</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-difficulty">7. Difficulty System</h2>
+
+<div class="section">
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Easy</th><th>Medium</th><th>Hard</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Damage multiplier (incoming)</td><td class="v-good">0.5×</td><td class="v-warn">0.75×</td><td class="v-bad">1.0×</td><td>Applied to all enemy bullet damage hitting the player</td></tr>
+      <tr><td>Fire rate multiplier</td><td class="v-good">0.5×</td><td class="v-warn">0.75×</td><td class="v-bad">1.0×</td><td>Multiplied on base fire rate — lower = slower enemy firing</td></tr>
+      <tr><td>Spawn frequency multiplier</td><td class="v-good">0.7×</td><td class="v-warn">0.85×</td><td class="v-bad">1.0×</td><td>Fewer enemies spawn per unit time on Easy/Medium</td></tr>
+      <tr><td>HP regeneration delay</td><td class="v-good">30 frames/HP</td><td class="v-warn">60 frames/HP</td><td class="v-bad">120 frames/HP</td><td>Lower = faster regen; Easy regenerates 4× faster than Hard</td></tr>
+      <tr><td>Enemy HP</td><td>1.0× (unchanged)</td><td>1.0×</td><td>1.0×</td><td>Enemy HP does NOT scale with difficulty</td></tr>
+      <tr><td>Player HP</td><td>1.0× (unchanged)</td><td>1.0×</td><td>1.0×</td><td>Player HP does NOT scale with difficulty</td></tr>
+      <tr><td>Boss HP</td><td>1.0× (unchanged)</td><td>1.0×</td><td>1.0×</td><td>Boss HP does NOT scale with difficulty</td></tr>
+      <tr><td>Powerup drop rates</td><td>1.0×</td><td>1.0×</td><td>1.0×</td><td>Drops are not adjusted per difficulty</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Effective Difficulty Comparison — Enemy Fire Rate Examples</h3>
+<div class="section">
+  <table>
+    <thead>
+      <tr><th>Enemy</th><th>Base Fire Rate</th><th>Easy (0.5×)</th><th>Medium (0.75×)</th><th>Hard (1.0×)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Void Sniper</td><td>733ms</td><td class="v-good">1466ms</td><td class="v-warn">977ms</td><td class="v-bad">733ms</td></tr>
+      <tr><td>Void Soldier (standard)</td><td>1100ms</td><td class="v-good">2200ms</td><td class="v-warn">1467ms</td><td class="v-bad">1100ms</td></tr>
+      <tr><td>Void Soldier (variant)</td><td>700ms</td><td class="v-good">1400ms</td><td class="v-warn">933ms</td><td class="v-bad">700ms</td></tr>
+      <tr><td>Void Dreadnought</td><td>490ms</td><td class="v-good">980ms</td><td class="v-warn">653ms</td><td class="v-bad">490ms</td></tr>
+      <tr><td>Drone</td><td>800ms</td><td class="v-good">1600ms</td><td class="v-warn">1067ms</td><td class="v-bad">800ms</td></tr>
+      <tr><td>Elite (Human)</td><td>1800ms</td><td class="v-good">3600ms</td><td class="v-warn">2400ms</td><td class="v-bad">1800ms</td></tr>
+      <tr><td>Defender Fast</td><td>900ms</td><td class="v-good">1800ms</td><td class="v-warn">1200ms</td><td class="v-bad">900ms</td></tr>
+      <tr><td>Defender Elite</td><td>1600ms</td><td class="v-good">3200ms</td><td class="v-warn">2133ms</td><td class="v-bad">1600ms</td></tr>
+    </tbody>
+  </table>
+  <div class="note">The fire rate multiplier applies to all enemies simultaneously, including bosses. It effectively halves the bullet density on Easy, which is the dominant factor in survivability.</div>
+</div>
+
+<h3>Boss Fire Rates by Phase &amp; Difficulty</h3>
+<div class="section">
+  <table>
+    <thead>
+      <tr><th>Boss</th><th>Phase</th><th>Base Rate</th><th>Easy</th><th>Medium</th><th>Hard</th></tr>
+    </thead>
+    <tbody>
+      <tr><td rowspan="3">Mark I</td><td class="ph1">P1</td><td>800ms</td><td class="v-good">1600ms</td><td class="v-warn">1067ms</td><td class="v-bad">800ms</td></tr>
+      <tr><td class="ph2">P2</td><td>500ms</td><td class="v-good">1000ms</td><td class="v-warn">667ms</td><td class="v-bad">500ms</td></tr>
+      <tr><td class="ph3">P3</td><td>300ms</td><td class="v-good">600ms</td><td class="v-warn">400ms</td><td class="v-bad">300ms</td></tr>
+      <tr><td rowspan="3">The Knight</td><td class="ph1">P1</td><td>600ms</td><td class="v-good">1200ms</td><td class="v-warn">800ms</td><td class="v-bad">600ms</td></tr>
+      <tr><td class="ph2">P2</td><td>400ms</td><td class="v-good">800ms</td><td class="v-warn">533ms</td><td class="v-bad">400ms</td></tr>
+      <tr><td class="ph3">P3</td><td>250ms</td><td class="v-good">500ms</td><td class="v-warn">333ms</td><td class="v-bad">250ms</td></tr>
+      <tr><td rowspan="3">Mark II</td><td class="ph1">P1</td><td>600ms</td><td class="v-good">1200ms</td><td class="v-warn">800ms</td><td class="v-bad">600ms</td></tr>
+      <tr><td class="ph2">P2</td><td>400ms</td><td class="v-good">800ms</td><td class="v-warn">533ms</td><td class="v-bad">400ms</td></tr>
+      <tr><td class="ph3">P3</td><td>200ms</td><td class="v-good">400ms</td><td class="v-warn">267ms</td><td class="v-bad">200ms</td></tr>
+      <tr><td rowspan="3">Mark III</td><td class="ph1">P1</td><td>4000ms (cluster)</td><td class="v-good">8000ms</td><td class="v-warn">5333ms</td><td class="v-bad">4000ms</td></tr>
+      <tr><td class="ph2">P2</td><td>3200ms</td><td class="v-good">6400ms</td><td class="v-warn">4267ms</td><td class="v-bad">3200ms</td></tr>
+      <tr><td class="ph3">P3</td><td>2500ms</td><td class="v-good">5000ms</td><td class="v-warn">3333ms</td><td class="v-bad">2500ms</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-firerates">8. Fire Rate Analysis</h2>
+
+<div class="section">
+  <h3>Fire Rates Across Level Phases</h3>
+  <p>Enemy fire rates do <strong>not</strong> change based on level phase. The phase system only changes <em>which enemies spawn</em>, not how fast those enemy types fire. Fire rate scaling only occurs via:</p>
+  <ul class="plain">
+    <li>Boss phase transitions (explicit fire rate values per phase, hardcoded per boss)</li>
+    <li>Difficulty multiplier (global 0.5× / 0.75× / 1.0×)</li>
+    <li>The Void Soldier variant spawn (intrinsic to that 25% of spawns)</li>
+  </ul>
+
+  <h3>Key Concerns</h3>
+  <table>
+    <thead><tr><th>Issue</th><th>Detail</th><th>Severity</th></tr></thead>
+    <tbody>
+      <tr><td>Void Dreadnought 490ms rate</td><td>Fires faster than most bosses in Phase 1. Spawning two Void Dreadnoughts simultaneously creates near-continuous bullet coverage.</td><td class="v-bad">High</td></tr>
+      <tr><td>Void Sniper 733ms rate</td><td>Nearly twice as fast as the human Sniper (2500ms). Aimed shots at 733ms with multiple snipers present creates unavoidable sequences.</td><td class="v-warn">Medium-High</td></tr>
+      <tr><td>Void Protector shielding</td><td>When Protector casts a 2000 HP shield, it does not slow down the shielded enemy's fire rate. A shielded Dreadnought becomes significantly more dangerous while also harder to kill.</td><td class="v-bad">High</td></tr>
+      <tr><td>Mini Asteroid rush (4.8 speed)</td><td>Fastest enemy in the game. Combined with 35% double-drop, creates dense fast-moving obstacle fields in Level 4 mid-section.</td><td class="v-warn">Medium</td></tr>
+      <tr><td>Boss Phase 3 fire rate increase</td><td>All bosses fire at minimum 200–300ms in Phase 3. At these rates, the screen fills with bullets between player fire bursts, especially on Hard.</td><td class="v-bad">High</td></tr>
+      <tr><td>Level 5 Phase 5–6 stacking</td><td>Void Turrets (3-pattern), Dreadnoughts (490ms), Void Masters (900ms + shield), Defender Elites (1600ms burst) all active simultaneously. Combined bullet output is very high.</td><td class="v-bad">High</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-analysis">9. Balance Analysis &amp; Recommendations</h2>
+
+<div class="danger">
+  <strong>Current state assessment:</strong> Easy is completable but challenging. Medium is very difficult. Hard is near-impossible to complete a level due to combined bullet density and damage. The core issue is a compounding difficulty curve — enemies become denser in later phases AND each enemy type fires faster than its predecessor, with no compensating player upgrades or breathing room built into spawn timers.
+</div>
+
+<hr>
+
+<div class="rec-block">
+  <h4><span class="rec-num">1</span> Restructure the Difficulty Multipliers</h4>
+  <p><strong>Problem:</strong> The gap between Easy and Medium is too small in terms of survivability. Easy halves damage and fire rate. Medium is only 25% slower than Hard. The experience jumps from manageable to brutal between Medium and Hard.</p>
+  <p><strong>Fix:</strong></p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Easy (current)</th><th>Easy (suggested)</th><th>Medium (current)</th><th>Medium (suggested)</th><th>Hard (unchanged)</th></tr></thead>
+    <tbody>
+      <tr><td>Damage multiplier</td><td>0.5×</td><td>0.4×</td><td>0.75×</td><td>0.6×</td><td>1.0×</td></tr>
+      <tr><td>Fire rate multiplier</td><td>0.5×</td><td>0.45×</td><td>0.75×</td><td>0.62×</td><td>1.0×</td></tr>
+      <tr><td>Spawn multiplier</td><td>0.7×</td><td>0.6×</td><td>0.85×</td><td>0.75×</td><td>1.0×</td></tr>
+      <tr><td>HP regen delay</td><td>30f</td><td>20f</td><td>60f</td><td>40f</td><td>120f</td></tr>
+    </tbody>
+  </table>
+  <p>The key change is pulling Easy and Medium further apart from Hard, so Medium feels challenging but finishable, and Hard feels achievable by skilled players rather than impossible.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">2</span> Cap the Void Dreadnought Fire Rate</h4>
+  <p><strong>Problem:</strong> 490ms is faster than most bosses. Two Dreadnoughts simultaneously produce 4 bullets per second combined from their cone patterns, saturating the player's dodging space alongside regular enemies.</p>
+  <p><strong>Fix:</strong> Increase Dreadnought base fire rate to <strong>800ms</strong>. Easy becomes 1600ms, Hard stays at 800ms. Adjust Void Dreadnought to <strong>700ms</strong> base. This is still fast but no longer boss-tier fast for a regular enemy.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">3</span> Cap the Void Protector Shield Value</h4>
+  <p><strong>Problem:</strong> A 2000 HP shield applied to a Void Dreadnought (1285 HP) means the combined target has 3285 effective HP — more than the first three bosses. This is unintentionally punishing in Level 4's final phase where both unit types spawn together.</p>
+  <p><strong>Fix:</strong> Reduce the Protector shield grant to <strong>400–600 HP</strong>. This is still meaningful protection without tripling the effective HP of high-value targets. Alternatively, exclude Dreadnoughts from being valid shield targets.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">4</span> Add a Spawn Cap Per Enemy Type</h4>
+  <p><strong>Problem:</strong> There is no limit on how many of a given enemy type can be on screen simultaneously. In later phases of Levels 4–5, it's possible to have 4+ Void Turrets active (each cycling through 3 bullet patterns + aimed shots) alongside multiple Dreadnoughts and Snipers.</p>
+  <p><strong>Fix:</strong> Implement a per-type cap. Suggested caps: Void Dreadnought max 1 at a time; Void Turret max 2; Void Protector max 1; Void Master max 2. This prevents the accidental stacking of high-output enemies into unplayable density.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">5</span> Give Medium and Easy Players Extra Starting Powerups</h4>
+  <p><strong>Problem:</strong> Powerup drops are the same across all difficulties, but the player needs more firepower on harder difficulties to kill enemies before they fire. The current system doesn't help players who struggle to get early powerups.</p>
+  <p><strong>Fix:</strong> Give Easy players 1 free firepower and 1 tracking gun at level start. Give Medium players 1 free firepower. This levels the floor of player capability without affecting the ceiling.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">6</span> Add a Bullet Density Safety Valve</h4>
+  <p><strong>Problem:</strong> There is no mechanism that reduces bullet density when the screen becomes overloaded. The game has no concept of "too many bullets" — it can produce situations where gaps to dodge through literally do not exist.</p>
+  <p><strong>Fix:</strong> Implement a global active-bullet counter. If more than a threshold number of bullets are simultaneously active on screen (e.g. 60 for Easy, 90 for Medium, unlimited for Hard), temporarily suppress new enemy fire until the count drops below 80%. This cap prevents mathematically impossible scenarios while preserving the intended difficulty feel.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">7</span> Scale Enemy HP by Difficulty</h4>
+  <p><strong>Problem:</strong> Enemy HP is identical on Easy, Medium and Hard. This means on Easy, enemies live just as long as on Hard, but the player takes less damage. Easy players still have to shoot through the same HP pools while dodging — the reduced incoming damage doesn't help with time-under-fire.</p>
+  <p><strong>Fix:</strong> Apply HP multipliers: Easy 0.7× enemy HP, Medium 0.85× enemy HP, Hard 1.0×. Bosses could have a slightly smaller adjustment: Easy 0.75×, Medium 0.9×. This meaningfully reduces time-under-fire on lower difficulties.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">8</span> Introduce Breathing Room Between Spawn Phases</h4>
+  <p><strong>Problem:</strong> Phase transitions (e.g. Level 5 moving from Phase 3 to Phase 4) happen continuously with no pause. When phase 4 introduces Asteroid Layers alongside the existing Void and Defender mix, there's no grace period.</p>
+  <p><strong>Fix:</strong> At each phase transition, insert a 3–5 second spawn pause (no new enemies) and briefly show a phase indicator to the player. This creates natural breathing points and helps players anticipate the upcoming challenge type.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">9</span> Remove the speed_up Permanent Stacking Cap Issue</h4>
+  <p><strong>Problem:</strong> speed_up is permanent and unlimited. A player who collects many speed_up powerups moves faster than the game's dodge windows were designed for, which can trivialise sections that depend on the player not being able to avoid everything.</p>
+  <p><strong>Fix:</strong> Cap speed_up at 3 stacks maximum (total speed 5 + 6 = 11). Subsequent speed_up pickups could instead grant a temporary 5-second speed boost, or convert to score points.</p>
+</div>
+
+<div class="rec-block">
+  <h4><span class="rec-num">10</span> Normalise the Void Sniper Fire Rate</h4>
+  <p><strong>Problem:</strong> The Void Sniper fires at 733ms compared to the Human Sniper at 2500ms — a 3.4× difference. The Void Sniper was clearly designed to be more aggressive, but at 733ms with multiple snipers present, aimed precision shots arrive faster than many players can react across all difficulty levels.</p>
+  <p><strong>Fix:</strong> Increase Void Sniper fire rate to <strong>1100ms</strong> base. This is still 2.3× faster than its human counterpart and aligns with Void Soldier standard fire rate, creating a more coherent faction-wide feel.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="s-gatekeeper">10. The Gatekeeper — Fix Recommendations</h2>
+
+<div class="danger">
+  <strong>Issue:</strong> After Phase 3 of the Gatekeeper fight, bullet density reaches a level that is not survivable regardless of player skill, difficulty setting, powerup loadout, or movement. This is not a balance problem — it is a mathematical impossibility. The available movement space becomes smaller than the gaps between bullets. The fight cannot be completed in the current state.
+</div>
+
+<h3>Root Causes</h3>
+<div class="section">
+  <ul class="plain">
+    <li>The Void Corruption scale increases as HP drops, directly increasing bullet output rate — by Phase 5, Void Corruption is near maximum, producing bullet generation rates the screen cannot accommodate.</li>
+    <li>Multiple sub-machine parts fire independently and simultaneously. At low HP, all sub-machines are firing at maximum rate in addition to the core's own pattern. There is no coordination limit between sub-machine outputs.</li>
+    <li>The complex fractal and chaos patterns in later phases are procedurally generated in ways that can produce zero-gap configurations — every possible movement path is blocked simultaneously.</li>
+    <li>The laser cooldown (300 frames) is long but the laser itself coincides with the highest-density regular bullet phases, creating moments where the player must dodge a laser and a saturated bullet field simultaneously.</li>
+    <li>The black hole phase (which pulls bullets and the player) occurs during high-density phases, pushing the player into bullet streams they would otherwise dodge.</li>
+  </ul>
+</div>
+
+<h3>Specific Fixes</h3>
+
+<div class="rec-block">
+  <h4>Fix A — Hard Cap Void Corruption in Phase 3+</h4>
+  <p>The Void Corruption variable (currently uncapped beyond the 0–1 scale) should be clamped to a maximum of <strong>0.55</strong> during active combat. This prevents bullet generation from reaching its current mathematically unsolvable density. At 0.55, patterns remain intense and dramatic but leave navigable gaps. Add a line:</p>
+  <pre style="background:#0a0a14;border:1px solid #2a2a3e;padding:8px 12px;border-radius:3px;color:#86efac;font-size:0.88em;">boss.voidCorruption = Math.min(boss.voidCorruption, 0.55);</pre>
+  <p>Apply this clamp in the update loop, before bullet generation calculations.</p>
+</div>
+
+<div class="rec-block">
+  <h4>Fix B — Sub-Machine Coordination Limit</h4>
+  <p>Implement a turn-based firing system for the Gatekeeper's sub-machines. Instead of all parts firing simultaneously, they should fire in a rotating sequence. Suggested implementation: assign each sub-machine a firing slot offset (e.g. offset by 200ms each). This converts simultaneous bullet walls into staggered waves that create gaps. The total damage output remains the same but is temporally distributed.</p>
+</div>
+
+<div class="rec-block">
+  <h4>Fix C — Phase 4+ Bullet Count Cap Per Pattern</h4>
+  <p>The fractal and chaos patterns should have a hard maximum bullet count per fire event — regardless of how high the corruption or chaos values are. Suggested caps:</p>
+  <table>
+    <thead><tr><th>Pattern Type</th><th>Current Max</th><th>Suggested Cap</th></tr></thead>
+    <tbody>
+      <tr><td>Circle burst</td><td>Uncapped</td><td>16 bullets max</td></tr>
+      <tr><td>Fractal spread</td><td>Uncapped</td><td>12 bullets max per arm</td></tr>
+      <tr><td>Chaos burst</td><td>Uncapped</td><td>20 bullets per event</td></tr>
+      <tr><td>Void bullet cloud</td><td>Uncapped</td><td>10 bullets max per cloud</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="rec-block">
+  <h4>Fix D — Disable Black Hole During High Bullet Density</h4>
+  <p>The black hole mechanic (which pulls the player into existing bullet streams) should be deactivated when more than 40 active enemy bullets are currently on screen. At that density, the black hole push is a near-certain death. The black hole is a great mechanic at lower densities — it just shouldn't activate into an already-saturated screen.</p>
+</div>
+
+<div class="rec-block">
+  <h4>Fix E — Add a Phase 5 Laser Ceasefire Window</h4>
+  <p>When the Gatekeeper fires its laser in Phase 5+, all other bullet-generating sub-machines should pause for the duration of the laser beam + 60 frames after. This makes the laser feel like a distinct danger moment (which it should be) rather than an additional hazard stacked on top of already impossible bullet density.</p>
+</div>
+
+<div class="rec-block">
+  <h4>Fix F — Introduce a Desperation Drop at Phase 5</h4>
+  <p>When the Gatekeeper transitions into Phase 5 (at approximately 25% HP), drop 2–3 powerups onto the field — shield, health, and rapid fire. This gives the player a resource to collect before the most intense phase, rewards them for surviving to that point, and functionally gives them a fighting chance. At 25% HP remaining, the fight should feel like a tense final push, not a death sentence.</p>
+</div>
+
+<div class="rec-block">
+  <h4>Fix G — Reduce Phase 5 Base Fire Rate</h4>
+  <p>The Gatekeeper in Phase 5 currently fires at maximum rate across all systems simultaneously. Introduce a Phase 5-specific fire rate multiplier that reduces all Gatekeeper firing to <strong>0.65×</strong> of the Phase 4 rate. This is counterintuitive (the boss slowing slightly as it nears death) but frames it as the boss being damaged and malfunctioning — which fits the game's Void Machine aesthetic — and makes the ending survivable.</p>
+  <p>Example: if Phase 4 fires at 300ms intervals, Phase 5 fires at ~460ms. The visual intensity can remain high through effects, screen shake, and audio — the player should feel under pressure without the firing rate being literally impossible.</p>
+</div>
+
+<div class="good">
+  <strong>Target experience for the Gatekeeper fix:</strong> Phase 3 should feel intense but survivable with good play. Phase 4 should require the player to use all their powerups and move constantly. Phase 5 should feel like a dramatic final push where survival is earned, not impossible. The boss should be the hardest thing in the game — not unbeatable.
+</div>
+
+<hr>
+<h3>Priority Fix Order</h3>
+<table>
+  <thead><tr><th>Priority</th><th>Fix</th><th>Effort</th><th>Impact</th></tr></thead>
+  <tbody>
+    <tr><td class="v-bad">1 (Immediate)</td><td>Fix A — Clamp Void Corruption to 0.55</td><td class="v-good">Low (1 line)</td><td class="v-bad">Makes Gatekeeper finishable</td></tr>
+    <tr><td class="v-bad">2 (Immediate)</td><td>Fix C — Cap bullets per pattern</td><td class="v-warn">Medium</td><td class="v-bad">Eliminates zero-gap configurations</td></tr>
+    <tr><td class="v-warn">3 (High)</td><td>Fix G — Phase 5 fire rate reduction</td><td class="v-good">Low</td><td class="v-bad">Balances final phase</td></tr>
+    <tr><td class="v-warn">4 (High)</td><td>Rec 1 — Restructure difficulty multipliers</td><td class="v-warn">Medium</td><td class="v-bad">Fixes Medium/Hard difficulty wall</td></tr>
+    <tr><td class="v-warn">5 (High)</td><td>Rec 3 — Reduce Protector shield to 400–600 HP</td><td class="v-good">Low (1 value)</td><td class="v-warn">Fixes Level 4 final phase</td></tr>
+    <tr><td class="v-warn">6 (High)</td><td>Rec 10 — Void Sniper to 1100ms</td><td class="v-good">Low (1 value)</td><td class="v-warn">Reduces aimed-shot unavoidability</td></tr>
+    <tr><td class="v-num">7 (Medium)</td><td>Rec 7 — HP scaling by difficulty</td><td class="v-warn">Medium</td><td class="v-warn">Reduces time-under-fire on Easy/Medium</td></tr>
+    <tr><td class="v-num">8 (Medium)</td><td>Fix B — Sub-machine firing coordination</td><td class="v-bad">High</td><td class="v-bad">Eliminates simultaneous bullet walls</td></tr>
+    <tr><td class="v-num">9 (Medium)</td><td>Rec 2 — Dreadnought fire rate to 800ms</td><td class="v-good">Low</td><td class="v-warn">Reduces phase density in L3–L5</td></tr>
+    <tr><td class="v-dim">10 (Low)</td><td>Rec 4 — On-screen enemy type caps</td><td class="v-warn">Medium</td><td class="v-warn">Prevents worst-case stacking</td></tr>
+    <tr><td class="v-dim">11 (Low)</td><td>Rec 6 — Active bullet count safety valve</td><td class="v-warn">Medium</td><td class="v-warn">Systemic protection against bullet saturation</td></tr>
+    <tr><td class="v-dim">12 (Low)</td><td>Rec 9 — Cap speed_up stacks</td><td class="v-good">Low</td><td class="v-dim">Prevents trivialisation via speed stacking</td></tr>
+  </tbody>
+</table>
+
+<footer>Fighters Of The Void — Balance Report v59 &nbsp;·&nbsp; Internal design document &nbsp;·&nbsp; 2026-06-03</footer>
+
+</body>
+</html>

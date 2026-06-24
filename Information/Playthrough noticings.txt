@@ -1,0 +1,21 @@
+Playthrough noticings -
+
+Player too slow in general, raise overall speed levels across the board.
+Too many rapidfire power ups appearing - rebalance
+Reduce slow down power ups a bit
+To do - rework damage flash system for enemies, doesn't look good.  Still wrong on a bunch of enemies.
+Add red flash when player is damaged.
+The heavy orange guys drop tracking guns too often, check it only becomes a passive power up from level 3.
+The knight enemy needs a different looking flash / animation for when it's teleporting vs. when it's firing a laser.
+How to make regular normal bullets more visible without ruining them visually. Visually they are perfect, they are just not quite easy to see enough for my tastes.  I don't want them having some big dumb glow or outline.
+Add a difficulty indicator.
+The sandbox console should still be accessible when the game is paused.
+
+Medium term -
+The Gatekeeper Boss is currently absolutely busted.  So many bullets in later phases it is literally impossible to survive.
+
+Longer term -
+Make points have a purpose and do something.
+
+Audio system - a huge to do, has it's own focus.
+Make bullets hitting enemy sound quieter, quite obtrusive.

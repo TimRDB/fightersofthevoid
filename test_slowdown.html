@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Slowdown Test</title>
+</head>
+<body>
+    <p>Open the browser console and run the game. Check for these debug messages:</p>
+    <ul>
+        <li>Look for "Slowdown activated" messages when hitting space-ships</li>
+        <li>Check that frameScale drops to ~0.33 during slowdown</li>
+        <li>Verify slowdown lasts exactly 5 seconds</li>
+    </ul>
+    
+    <p>To test:</p>
+    <ol>
+        <li>Open Fighters Of The Void v59.html</li>
+        <li>Start the game</li>
+        <li>Shoot enemy ships with space bar</li>
+        <li>Watch for grayscale effect and slower movement</li>
+        <li>Check console for frameScale debug output</li>
+    </ol>
+    
+    <script>
+        console.log("Slowdown timing fix applied:");
+        console.log("- slowEffectEnd now uses game.gameTime (cumulative time)");
+        console.log("- slowdown check uses game.gameTime instead of Date.now()");
+        console.log("- normalSpeedBoostEnd also uses game.gameTime");
+        console.log("- frameScale integration unchanged (already correct)");
+    </script>
+</body>
+</html>
