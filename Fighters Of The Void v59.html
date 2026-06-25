@@ -14691,10 +14691,49 @@
                 });
             }
 
-            // Screen flash on hit
-            if (game.gatekeeperFlash > 0) {
-                ctx.fillStyle = `rgba(140, 60, 255, ${game.gatekeeperFlash * 0.45})`;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Shape-fitted flash on hit — traces body polygon + all spike triangles, no canvas bleed
+            if (game.gatekeeperFlash > 0 && boss._spikeDefs) {
+                const fa = game.gatekeeperFlash;
+                const yS = 0.82;
+                const rx = 120 * (1 + Math.sin(boss.tendrilPhase*0.4)*0.06);
+                const ry = 95  * (1 + Math.cos(boss.tendrilPhase*0.4)*0.06);
+                const drawBodyPath = () => {
+                    ctx.beginPath();
+                    for (let i = 0; i <= 10; i++) {
+                        const a = (i / 10) * Math.PI * 2;
+                        const wob = 1 + Math.sin(boss.tendrilPhase*0.5 + i*1.1)*0.07;
+                        const px = boss.x + Math.cos(a)*rx*wob, py = boss.y + Math.sin(a)*ry*wob;
+                        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                };
+                const drawSpikePath = (sp, si) => {
+                    const wob = Math.sin(boss.tendrilPhase*0.65 + sp.a*2.1 + si*0.4) * 0.028;
+                    const ang = sp.a + wob;
+                    const tipX = boss.x + Math.cos(ang + sp.lean) * (sp.rB + sp.len);
+                    const tipY = boss.y + Math.sin(ang + sp.lean) * (sp.rB + sp.len) * yS;
+                    const bX = boss.x + Math.cos(ang) * (sp.rB - 8);
+                    const bY = boss.y + Math.sin(ang) * (sp.rB - 8) * yS;
+                    const pa = ang + Math.PI*0.5;
+                    const hw1 = sp.bw * (0.5 + sp.skew), hw2 = sp.bw * (0.5 - sp.skew);
+                    ctx.beginPath();
+                    ctx.moveTo(tipX, tipY);
+                    ctx.lineTo(bX + Math.cos(pa)*hw1, bY + Math.sin(pa)*hw1*yS);
+                    ctx.lineTo(bX - Math.cos(pa)*hw2, bY - Math.sin(pa)*hw2*yS);
+                    ctx.closePath();
+                };
+                ctx.save();
+                // Semi-transparent fill over body and each spike
+                ctx.fillStyle = `rgba(140,60,255,${fa * 0.42})`;
+                drawBodyPath(); ctx.fill();
+                boss._spikeDefs.forEach((sp, si) => { drawSpikePath(sp, si); ctx.fill(); });
+                // Bright edge glow (additive) traces the outlines — gives the "running along" illumination
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.strokeStyle = `rgba(190,90,255,${fa * 0.6})`;
+                ctx.lineWidth = 2.2;
+                drawBodyPath(); ctx.stroke();
+                boss._spikeDefs.forEach((sp, si) => { drawSpikePath(sp, si); ctx.stroke(); });
+                ctx.restore();
                 game.gatekeeperFlash = Math.max(0, game.gatekeeperFlash - (game.combinedFrameScale || 1) * 0.045);
             }
 
