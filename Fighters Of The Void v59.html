@@ -280,7 +280,6 @@
 
     <!-- v59.6c: Sound Testing Tool Panel -->
     <div id="soundTestingPanel" style="
-        display: none;
         position: fixed;
         top: 50px;
         right: 20px;
@@ -446,7 +445,6 @@
 
     <!-- v59.7: Sound Mixer Panel -->
     <div id="soundMixerPanel" style="
-        display: none;
         position: fixed;
         top: 100px;
         left: 500px;
@@ -689,6 +687,12 @@
                 min-height: 14px;
             }
         </style>
+    </div>
+
+    <!-- Sound panel toggle boxes - bottom left, outside play area -->
+    <div id="soundPanelToggles" style="position: fixed; bottom: 10px; left: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 10001;">
+        <button id="soundTestingToggleBox" style="width: 120px; padding: 8px 10px; background: rgba(74, 144, 226, 0.85); border: 2px solid #4a90e2; color: #fff; border-radius: 6px; cursor: pointer; font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 0 14px rgba(74, 144, 226, 0.7); transition: all 0.25s;">🔊 Sound Tester</button>
+        <button id="soundMixerToggleBox" style="width: 120px; padding: 8px 10px; background: rgba(42, 144, 226, 0.85); border: 2px solid #2a90e2; color: #fff; border-radius: 6px; cursor: pointer; font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 0 14px rgba(42, 144, 226, 0.7); transition: all 0.25s;">🎚 Sound Mixer</button>
     </div>
 
     <script>
@@ -30922,6 +30926,9 @@
                 slotStates: {},
                 // Cached audio blobs: { soundId: { blob, config } }
                 audioCache: {},
+                categoryVariations: {}, // { cat: [variation params] } — persists across tab switches
+                undoStack: [],           // { cat, keptIndex, prevApprovedIndex, displacedId }
+                nextUnassignedNum: 1,    // Counter for _u# labels
                 panelPos: { x: 0, y: 0 },
                 isDragging: false,
                 dragOffset: { x: 0, y: 0 },
@@ -30938,6 +30945,11 @@
                             this.toggle();
                         }
                     });
+                    const panel = document.getElementById('soundTestingPanel');
+                    if (panel) panel.style.display = 'none';
+                    const box = document.getElementById('soundTestingToggleBox');
+                    if (box) box.addEventListener('click', () => this.toggle());
+                    this.updateBoxState();
                 },
 
                 setupDragAndMinimize() {
@@ -30987,24 +30999,22 @@
                 },
 
                 toggleMinimize() {
-                    this.isMinimized = !this.isMinimized;
-                    const panel = document.getElementById('soundTestingPanel');
-                    const minimizeBtn = document.getElementById('soundTestingMinimizeBtn');
-                    const contentDiv = document.getElementById('soundTestingContent');
-                    const tabBar = document.getElementById('soundTestingTabBar');
+                    if (this.isOpen) this.toggle();
+                },
 
-                    if (panel) {
-                        if (this.isMinimized) {
-                            panel.style.maxHeight = 'auto';
-                            if (contentDiv) contentDiv.style.display = 'none';
-                            if (tabBar) tabBar.style.display = 'none';
-                            if (minimizeBtn) minimizeBtn.textContent = '+';
-                        } else {
-                            panel.style.maxHeight = '500px';
-                            if (contentDiv) contentDiv.style.display = 'flex';
-                            if (tabBar) tabBar.style.display = 'flex';
-                            if (minimizeBtn) minimizeBtn.textContent = '−';
-                        }
+                updateBoxState() {
+                    const box = document.getElementById('soundTestingToggleBox');
+                    if (!box) return;
+                    if (this.isOpen) {
+                        box.style.background = 'rgba(60, 60, 80, 0.4)';
+                        box.style.border = '2px solid #555';
+                        box.style.boxShadow = 'none';
+                        box.style.color = '#888';
+                    } else {
+                        box.style.background = 'rgba(74, 144, 226, 0.85)';
+                        box.style.border = '2px solid #4a90e2';
+                        box.style.boxShadow = '0 0 14px rgba(74, 144, 226, 0.7)';
+                        box.style.color = '#fff';
                     }
                 },
 
@@ -31092,6 +31102,7 @@
                             this.reservedSounds = data.reserved || {};
                             this.unassignedSounds = data.unassigned || [];
                             this.soundBackups = data.backups || {};
+                            this.nextUnassignedNum = data.nextUnassignedNum || 1;
                         }
                     } catch (e) {
                         console.warn('Could not load reserved sounds:', e);
@@ -31103,7 +31114,8 @@
                         const data = {
                             reserved: this.reservedSounds,
                             unassigned: this.unassignedSounds,
-                            backups: this.soundBackups
+                            backups: this.soundBackups,
+                            nextUnassignedNum: this.nextUnassignedNum
                         };
                         localStorage.setItem('soundTestingReserved', JSON.stringify(data));
                     } catch (e) {
@@ -31264,6 +31276,7 @@
                             }
                         }
                     }
+                    this.updateBoxState();
                 },
 
                 switchTab(tab) {
@@ -31424,13 +31437,13 @@
                             </div>
                             <div style="
                                 display: flex;
-                                gap: 6px;
+                                gap: 4px;
                                 align-items: center;
                                 flex-shrink: 0;
-                                margin-left: 10px;
+                                margin-left: 8px;
                             ">
                                 <button data-sound-action="play" data-sound="${soundName}" style="
-                                    padding: 4px 8px;
+                                    padding: 3px 7px;
                                     font-size: 10px;
                                     cursor: pointer;
                                     background: rgba(74, 144, 226, 0.4);
@@ -31438,7 +31451,16 @@
                                     color: #fff;
                                     border-radius: 2px;
                                 ">▶</button>
-                                <div style="color: #aaa; min-width: 35px; text-align: right;">
+                                <button data-sound-action="delete_library" data-sound="${soundName}" style="
+                                    padding: 3px 6px;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                    background: rgba(180, 60, 60, 0.35);
+                                    border: 1px solid #c55;
+                                    color: #fff;
+                                    border-radius: 2px;
+                                ">🗑</button>
+                                <div style="color: #aaa; min-width: 32px; text-align: right; font-size:10px;">
                                     ${durationStr}
                                 </div>
                             </div>
@@ -31454,6 +31476,19 @@
                             e.preventDefault();
                             const soundName = btn.getAttribute('data-sound');
                             this.playLibrarySound(soundName);
+                        };
+                    });
+
+                    // Bind delete buttons
+                    panel.querySelectorAll('[data-sound-action="delete_library"]').forEach(btn => {
+                        btn.onclick = (e) => {
+                            e.preventDefault();
+                            const soundName = btn.getAttribute('data-sound');
+                            const isUsed = this.soundUsage[soundName] && this.soundUsage[soundName] !== 'Unknown';
+                            const msg = `Delete "${soundName}"?`
+                                + (isUsed ? `\n\n⚠ This sound is currently assigned to: ${this.soundUsage[soundName] || '?'}\nIts slot will show (empty).` : '')
+                                + '\n\nThis cannot be undone.';
+                            if (confirm(msg)) this.deleteLibrarySound(soundName);
                         };
                     });
                 },
@@ -31491,29 +31526,20 @@
                 },
 
                 selectCategory(category) {
-                    console.log('selectCategory called with:', category);
                     this.currentCategory = category;
-
-                    // Initialize slot states if not already done
                     if (!this.slotStates[category]) {
                         this.slotStates[category] = {};
                         for (let i = 0; i < 5; i++) {
                             this.slotStates[category][i] = { state: 'empty', soundId: null };
                         }
                     }
-
-                    this.variations = this.generateVariations(category, 5);
-                    console.log('Generated variations:', this.variations.length);
-
-                    // Restore empty slots to have variations for generation
-                    this.variations.forEach((v, i) => {
-                        const slotState = this.slotStates[category][i];
-                        if (slotState.state === 'empty' && v) {
-                            slotState.state = 'unassigned';
-                            slotState.soundId = `${category}_slot_${i}`;
-                        }
-                    });
-
+                    // Restore cached variations so switching tabs doesn't wipe generated sounds
+                    if (this.categoryVariations[category]) {
+                        this.variations = this.categoryVariations[category];
+                    } else {
+                        this.variations = new Array(5).fill(null);
+                        this.categoryVariations[category] = this.variations;
+                    }
                     this.updatePanel();
                 },
 
@@ -31555,115 +31581,128 @@
                     return { size: 'medium', durationMult: 1.0, intensityMin: 0.7, intensityRange: 0.3 };
                 },
 
-                // Generate variations based on theme (with deterministic seeding)
+                // Generate variations — fully random every call, true variety per slot
                 generateVariations(category, count = 5) {
                     const theme = this.classifyTheme(category);
                     const variations = [];
+                    const r = () => Math.random();
 
-                    if (theme === 'explosion') {
-                        const expSize = this.classifyExplosionSize(category);
-                        for (let i = 0; i < count; i++) {
-                            // Use slot index for deterministic generation
-                            const step0 = this.getSeededValue(category, i, 0, 0, 8);
-                            const step1 = this.getSeededValue(category, i, 1, 0.3, 0.8);
-                            const step2 = this.getSeededValue(category, i, 2, 0, 1);
-
+                    for (let i = 0; i < count; i++) {
+                        if (theme === 'explosion') {
+                            const expSize = this.classifyExplosionSize(category);
+                            // Pick random variant (0-7) each time — no determinism
+                            const variant = Math.floor(r() * 8);
+                            // Duration: wide range within the size class
+                            const baseDur = 0.2 + r() * 0.65;
+                            // Intensity: always audibly strong, varies by size class
+                            const intensity = Math.max(0.6, expSize.intensityMin + r() * expSize.intensityRange);
+                            // Optional secondary layer flags
+                            const hasRingLayer  = r() > 0.55;  // resonant ring
+                            const hasCrackLayer = r() > 0.45;  // high crackle
                             variations.push({
                                 type: 'explosion',
-                                variant: Math.floor(step0), // Deterministic variant selection
-                                duration: step1 * expSize.durationMult,
-                                intensity: expSize.intensityMin + step2 * expSize.intensityRange,
-                                pitch: 100 + this.getSeededValue(category, i, 3, 0, 200),
+                                variant,
+                                duration: baseDur * expSize.durationMult,
+                                intensity,
+                                pitch: 50 + r() * 280,          // 50–330 Hz base pitch
+                                decay: 0.15 + r() * 0.65,       // envelope decay shape
+                                noiseAmount: 0.5 + r() * 0.5,   // noise layer weight
+                                hasRingLayer, hasCrackLayer,
                                 slotIndex: i,
                                 label: `Slot ${i + 1}`
                             });
-                        }
-                    } else if (theme === 'laser') {
-                        for (let i = 0; i < count; i++) {
+
+                        } else if (theme === 'laser') {
                             variations.push({
                                 type: 'laser',
-                                variant: i % 5,
-                                duration: 0.05 + Math.random() * 0.1,
-                                startFreq: 1200 + Math.random() * 1800,
-                                endFreq: 800 + Math.random() * 1200,
-                                intensity: 0.5 + Math.random() * 0.5,
+                                variant: Math.floor(r() * 5),
+                                duration: 0.04 + r() * 0.20,          // 0.04–0.24 s
+                                startFreq: 600 + r() * 2800,           // 600–3400 Hz
+                                endFreq: 150 + r() * 1600,             // 150–1750 Hz
+                                intensity: 0.4 + r() * 0.6,
+                                sweepShape: r() > 0.5 ? 'exp' : 'lin',
+                                harmonics: r() > 0.5,
                                 label: `Laser Variation ${i + 1}`
                             });
-                        }
-                    } else if (theme === 'bullet') {
-                        for (let i = 0; i < count; i++) {
+
+                        } else if (theme === 'bullet') {
                             variations.push({
                                 type: 'bullet',
-                                variant: i % 5,
-                                duration: 0.08 + Math.random() * 0.12,
-                                freq: 400 + Math.random() * 600,
-                                noiseAmount: 0.3 + Math.random() * 0.4,
+                                variant: Math.floor(r() * 5),
+                                duration: 0.05 + r() * 0.20,           // 0.05–0.25 s
+                                freq: 180 + r() * 950,                  // 180–1130 Hz
+                                noiseAmount: 0.15 + r() * 0.75,
+                                brightness: r(),                        // tonal vs noisy
+                                pitchDrop: r() > 0.4,                  // optional downward sweep
                                 label: `Bullet Variation ${i + 1}`
                             });
-                        }
-                    } else if (theme === 'collision') {
-                        for (let i = 0; i < count; i++) {
+
+                        } else if (theme === 'collision') {
                             variations.push({
                                 type: 'collision',
-                                variant: i % 5,
-                                duration: 0.06 + Math.random() * 0.08,
-                                pitch: 150 + Math.random() * 300,
-                                sharpness: 0.3 + Math.random() * 0.7,
+                                variant: Math.floor(r() * 5),
+                                duration: 0.03 + r() * 0.17,           // 0.03–0.20 s
+                                pitch: 70 + r() * 550,                  // 70–620 Hz
+                                sharpness: 0.15 + r() * 0.85,
+                                metallic: r() > 0.4,
+                                bodyDepth: r(),                         // thud body weight
                                 label: `Impact Variation ${i + 1}`
                             });
-                        }
-                    } else if (theme === 'powerup') {
-                        for (let i = 0; i < count; i++) {
+
+                        } else if (theme === 'powerup') {
                             variations.push({
                                 type: 'powerup',
-                                variant: i % 5,
-                                duration: 0.15 + Math.random() * 0.15,
-                                baseFreq: 600 + Math.random() * 400,
-                                riseAmount: 300 + Math.random() * 400,
-                                brightness: 0.4 + Math.random() * 0.6,
+                                variant: Math.floor(r() * 5),
+                                duration: 0.1 + r() * 0.35,            // 0.10–0.45 s
+                                baseFreq: 300 + r() * 900,              // 300–1200 Hz
+                                riseAmount: 150 + r() * 900,            // 150–1050 Hz rise
+                                brightness: 0.25 + r() * 0.75,
+                                numNotes: 1 + Math.floor(r() * 4),     // 1–4 chimed notes
+                                shimmer: r() > 0.5,
                                 label: `Powerup Variation ${i + 1}`
                             });
-                        }
-                    } else if (theme === 'flame') {
-                        for (let i = 0; i < count; i++) {
+
+                        } else if (theme === 'flame') {
                             variations.push({
                                 type: 'flame',
-                                variant: i % 5,
-                                duration: 0.2 + Math.random() * 0.3,
-                                crackliness: 0.3 + Math.random() * 0.7,
-                                intensity: 0.4 + Math.random() * 0.6,
+                                variant: Math.floor(r() * 3),
+                                duration: 0.12 + r() * 0.55,           // 0.12–0.67 s
+                                crackliness: 0.15 + r() * 0.85,
+                                intensity: 0.3 + r() * 0.7,
+                                roughness: r(),                         // fine vs coarse crackle
+                                subRumble: r() > 0.5,                  // optional low rumble
                                 label: `Flame Variation ${i + 1}`
                             });
-                        }
-                    } else if (theme === 'special') {
-                        for (let i = 0; i < count; i++) {
+
+                        } else if (theme === 'special') {
                             variations.push({
                                 type: 'special',
-                                variant: i % 5,
-                                duration: 0.1 + Math.random() * 0.15,
-                                numNotes: 1 + Math.floor(Math.random() * 3),
-                                spacing: 0.05 + Math.random() * 0.05,
+                                variant: Math.floor(r() * 4),
+                                duration: 0.07 + r() * 0.28,           // 0.07–0.35 s
+                                numNotes: 1 + Math.floor(r() * 4),     // 1–4 notes
+                                spacing: 0.025 + r() * 0.12,
+                                baseFreq: 350 + r() * 1400,            // 350–1750 Hz
+                                chordMode: r() > 0.6,                  // simultaneous vs sequential
                                 label: `Special Variation ${i + 1}`
                             });
-                        }
-                    } else if (theme === 'asteroid') {
-                        for (let i = 0; i < count; i++) {
+
+                        } else if (theme === 'asteroid') {
                             variations.push({
                                 type: 'asteroid',
-                                variant: i % 5,
-                                duration: 0.25 + Math.random() * 0.35,
-                                intensity: 0.5 + Math.random() * 0.5,
+                                variant: Math.floor(r() * 5),
+                                duration: 0.18 + r() * 0.55,           // 0.18–0.73 s
+                                intensity: 0.4 + r() * 0.6,
+                                gravel: r() > 0.45,                    // gritty high texture
+                                rockPitch: 40 + r() * 160,             // 40–200 Hz stone body
                                 label: `Asteroid Break ${i + 1}`
                             });
-                        }
-                    } else {
-                        // Generic fallback
-                        for (let i = 0; i < count; i++) {
+
+                        } else {
                             variations.push({
                                 type: 'generic',
-                                variant: i % 5,
-                                duration: 0.1 + Math.random() * 0.15,
-                                freq: 400 + Math.random() * 800,
+                                variant: Math.floor(r() * 5),
+                                duration: 0.07 + r() * 0.25,
+                                freq: 250 + r() * 1100,
                                 label: `Variation ${i + 1}`
                             });
                         }
@@ -31746,6 +31785,11 @@
                         return Math.min(0.95, 0.5 + intensity * 0.5);
                     };
 
+                    // Config-driven pitch/noise/decay scaling — gives each slot a distinct sonic character
+                    const freqScale = Math.max(0.4, Math.min(3.0, (config.pitch || 100) / 100));
+                    const noiseWt   = Math.max(0.5, Math.min(1.5, config.noiseAmount || 0.7));
+                    const dcyK      = Math.max(0.2, Math.min(0.8, config.decay || 0.4));
+
                     // Normalize to 8 different variants with much more variety
                     if (variant === 0) {
                         // SUBTLE SWEEP THUD - Mid-range punch with gentle frequency sweep, balanced volume
@@ -31757,15 +31801,14 @@
                         const filter = ctx.createBiquadFilter();
 
                         osc.type = 'sine';
-                        // More mid-range, less extreme sweep
-                        osc.frequency.setValueAtTime(100 + this.getSeededValue('', 0, 10, -20, 40), now);
-                        osc.frequency.exponentialRampToValueAtTime(60, now + duration * 0.5);
+                        osc.frequency.setValueAtTime((80 + Math.random() * 80) * freqScale, now);
+                        osc.frequency.exponentialRampToValueAtTime(Math.max(15, (45 + Math.random() * 25) * freqScale), now + duration * 0.5);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
                         const data = noiseBuf.getChannelData(0);
                         for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseLen * 0.35));
+                            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseLen * (0.15 + dcyK * 0.5)));
                         }
                         noiseBuffer.buffer = noiseBuf;
 
@@ -31773,7 +31816,7 @@
                         oscGain.gain.exponentialRampToValueAtTime(0.15, now + duration * 0.5);
                         oscGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
 
-                        noiseGain.gain.setValueAtTime(0.5 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.5 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.1, now + duration * 0.4);
                         noiseGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
 
@@ -31806,12 +31849,12 @@
                         const filter = ctx.createBiquadFilter();
 
                         osc1.type = 'triangle';
-                        osc1.frequency.setValueAtTime(120 + Math.random() * 80, now);
-                        osc1.frequency.exponentialRampToValueAtTime(40, now + duration * 0.5);
+                        osc1.frequency.setValueAtTime((120 + Math.random() * 80) * freqScale, now);
+                        osc1.frequency.exponentialRampToValueAtTime(Math.max(15, 40 * freqScale), now + duration * 0.5);
 
                         osc2.type = 'sawtooth';
-                        osc2.frequency.setValueAtTime(200 + Math.random() * 100, now);
-                        osc2.frequency.exponentialRampToValueAtTime(60, now + duration * 0.5);
+                        osc2.frequency.setValueAtTime((200 + Math.random() * 100) * freqScale, now);
+                        osc2.frequency.exponentialRampToValueAtTime(Math.max(20, 60 * freqScale), now + duration * 0.5);
 
                         gain1.gain.setValueAtTime(0.65 * intensity, now);
                         gain1.gain.exponentialRampToValueAtTime(0.12, now + duration * 0.6);
@@ -31825,10 +31868,10 @@
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
                         const data = noiseBuf.getChannelData(0);
                         for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.pow(Math.exp(-i / (noiseLen * 0.3)), 1.2);
+                            data[i] = (Math.random() * 2 - 1) * Math.pow(Math.exp(-i / (noiseLen * (0.12 + dcyK * 0.45))), 1.2);
                         }
                         noiseBuffer.buffer = noiseBuf;
-                        noiseGain.gain.setValueAtTime(0.75 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.75 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.15, now + duration * 0.4);
                         noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
 
@@ -31864,8 +31907,8 @@
                         const filter2 = ctx.createBiquadFilter();
 
                         osc.type = 'square';
-                        osc.frequency.setValueAtTime(250 + Math.random() * 150, now);
-                        osc.frequency.exponentialRampToValueAtTime(80, now + duration * 0.6);
+                        osc.frequency.setValueAtTime((250 + Math.random() * 150) * freqScale, now);
+                        osc.frequency.exponentialRampToValueAtTime(Math.max(20, 80 * freqScale), now + duration * 0.6);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -31879,7 +31922,7 @@
                         oscGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.5);
                         oscGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
 
-                        noiseGain.gain.setValueAtTime(0.8 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.8 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.25, now + duration * 0.5);
                         noiseGain.gain.exponentialRampToValueAtTime(0.05, now + duration);
 
@@ -31915,12 +31958,12 @@
                         const mainGain = ctx.createGain();
 
                         osc1.type = 'sawtooth';
-                        osc1.frequency.setValueAtTime(150 + Math.random() * 100, now);
-                        osc1.frequency.exponentialRampToValueAtTime(50, now + duration * 0.7);
+                        osc1.frequency.setValueAtTime((150 + Math.random() * 100) * freqScale, now);
+                        osc1.frequency.exponentialRampToValueAtTime(Math.max(20, 50 * freqScale), now + duration * 0.7);
 
                         osc2.type = 'sine';
-                        osc2.frequency.setValueAtTime(400 + Math.random() * 200, now);
-                        osc2.frequency.exponentialRampToValueAtTime(150, now + duration * 0.6);
+                        osc2.frequency.setValueAtTime((400 + Math.random() * 200) * freqScale, now);
+                        osc2.frequency.exponentialRampToValueAtTime(Math.max(30, 150 * freqScale), now + duration * 0.6);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -31939,7 +31982,7 @@
                         gain2.gain.exponentialRampToValueAtTime(0.08, now + duration * 0.6);
                         gain2.gain.exponentialRampToValueAtTime(0.03, now + duration);
 
-                        noiseGain.gain.setValueAtTime(0.75 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.75 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.3);
                         noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
 
@@ -31972,16 +32015,16 @@
                         const mainGain = ctx.createGain();
 
                         osc1.type = 'sine';
-                        osc1.frequency.setValueAtTime(80 + Math.random() * 40, now);
-                        osc1.frequency.exponentialRampToValueAtTime(30, now + duration * 0.8);
+                        osc1.frequency.setValueAtTime((80 + Math.random() * 40) * freqScale, now);
+                        osc1.frequency.exponentialRampToValueAtTime(Math.max(15, 38 * freqScale), now + duration * 0.8);
 
                         osc2.type = 'triangle';
-                        osc2.frequency.setValueAtTime(180 + Math.random() * 100, now);
-                        osc2.frequency.exponentialRampToValueAtTime(60, now + duration * 0.7);
+                        osc2.frequency.setValueAtTime((180 + Math.random() * 100) * freqScale, now);
+                        osc2.frequency.exponentialRampToValueAtTime(Math.max(20, 60 * freqScale), now + duration * 0.7);
 
                         osc3.type = 'sawtooth';
-                        osc3.frequency.setValueAtTime(350 + Math.random() * 150, now);
-                        osc3.frequency.exponentialRampToValueAtTime(100, now + duration * 0.6);
+                        osc3.frequency.setValueAtTime((350 + Math.random() * 150) * freqScale, now);
+                        osc3.frequency.exponentialRampToValueAtTime(Math.max(30, 100 * freqScale), now + duration * 0.6);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -32001,7 +32044,7 @@
                         g3.gain.setValueAtTime(0.5 * intensity, now);
                         g3.gain.exponentialRampToValueAtTime(0.12, now + duration);
 
-                        noiseGain.gain.setValueAtTime(0.8 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.8 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.4);
                         noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
 
@@ -32037,18 +32080,18 @@
                         const filter = ctx.createBiquadFilter();
 
                         osc1.type = 'sine';
-                        osc1.frequency.setValueAtTime(40 + Math.random() * 20, now);
-                        osc1.frequency.exponentialRampToValueAtTime(15, now + duration * 0.8);
+                        osc1.frequency.setValueAtTime((55 + Math.random() * 25) * freqScale, now);
+                        osc1.frequency.exponentialRampToValueAtTime(Math.max(12, 30 * freqScale), now + duration * 0.8);
 
                         osc2.type = 'sine';
-                        osc2.frequency.setValueAtTime(80 + Math.random() * 40, now);
-                        osc2.frequency.exponentialRampToValueAtTime(30, now + duration * 0.8);
+                        osc2.frequency.setValueAtTime((90 + Math.random() * 50) * freqScale, now);
+                        osc2.frequency.exponentialRampToValueAtTime(Math.max(15, 45 * freqScale), now + duration * 0.8);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
                         const data = noiseBuf.getChannelData(0);
                         for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseLen * 0.5));
+                            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseLen * (0.2 + dcyK * 0.6)));
                         }
                         noiseBuffer.buffer = noiseBuf;
 
@@ -32060,7 +32103,7 @@
                         g2.gain.exponentialRampToValueAtTime(0.1, now + duration * 0.7);
                         g2.gain.exponentialRampToValueAtTime(0.01, now + duration);
 
-                        noiseGain.gain.setValueAtTime(0.4 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.4 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.08, now + duration * 0.6);
                         noiseGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
 
@@ -32095,8 +32138,8 @@
                         const filter = ctx.createBiquadFilter();
 
                         osc.type = 'square';
-                        osc.frequency.setValueAtTime(600 + Math.random() * 300, now);
-                        osc.frequency.exponentialRampToValueAtTime(200, now + duration * 0.5);
+                        osc.frequency.setValueAtTime((600 + Math.random() * 300) * freqScale, now);
+                        osc.frequency.exponentialRampToValueAtTime(Math.max(30, 200 * freqScale), now + duration * 0.5);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -32110,7 +32153,7 @@
                         oscGain.gain.exponentialRampToValueAtTime(0.15, now + duration * 0.4);
                         oscGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
 
-                        noiseGain.gain.setValueAtTime(0.85 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.85 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.4);
                         noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
 
@@ -32141,9 +32184,9 @@
                         const filter = ctx.createBiquadFilter();
 
                         osc.type = 'sine';
-                        osc.frequency.setValueAtTime(50 + Math.random() * 30, now);
-                        osc.frequency.exponentialRampToValueAtTime(20, now + duration * 0.3);
-                        osc.frequency.exponentialRampToValueAtTime(12, now + duration);
+                        osc.frequency.setValueAtTime((65 + Math.random() * 35) * freqScale, now);
+                        osc.frequency.exponentialRampToValueAtTime(Math.max(12, 38 * freqScale), now + duration * 0.3);
+                        osc.frequency.exponentialRampToValueAtTime(Math.max(8, 22 * freqScale), now + duration);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -32157,9 +32200,9 @@
                         oscGain.gain.exponentialRampToValueAtTime(0.1, now + duration * 0.3);
                         oscGain.gain.exponentialRampToValueAtTime(0.01, now + duration);
 
-                        noiseGain.gain.setValueAtTime(0.6 * intensity, now);
+                        noiseGain.gain.setValueAtTime(0.6 * intensity * noiseWt, now);
                         noiseGain.gain.exponentialRampToValueAtTime(0.05, now + duration * 0.2);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.005, now + duration);
+                        noiseGain.gain.exponentialRampToValueAtTime(0.01, now + duration);
 
                         filter.type = 'lowpass';
                         filter.frequency.setValueAtTime(150, now);
@@ -32178,12 +32221,52 @@
                         noiseBuffer.start(now);
                         noiseBuffer.stop(now + duration);
                     }
+
+                    // Optional ring layer — a resonant ping at pitch * 1.8 that decays quickly
+                    if (config.hasRingLayer) {
+                        const ringOsc = ctx.createOscillator();
+                        const ringGain = ctx.createGain();
+                        const ringPitch = Math.max(40, (config.pitch || 100) * 1.8);
+                        ringOsc.type = 'sine';
+                        ringOsc.frequency.setValueAtTime(ringPitch, now);
+                        ringOsc.frequency.exponentialRampToValueAtTime(Math.max(20, ringPitch * 0.5), now + duration * 0.35);
+                        ringGain.gain.setValueAtTime(0.14 * intensity, now);
+                        ringGain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.35);
+                        ringOsc.connect(ringGain);
+                        ringGain.connect(getSfxOutputNode(ctx) || ctx.destination);
+                        ringOsc.start(now);
+                        ringOsc.stop(now + duration * 0.35);
+                    }
+
+                    // Optional crack layer — a sharp high-pass noise transient
+                    if (config.hasCrackLayer) {
+                        const crackDur = Math.min(0.07, duration * 0.18);
+                        const crackLen = Math.floor(ctx.sampleRate * crackDur);
+                        const crackBuf = ctx.createBuffer(1, crackLen, ctx.sampleRate);
+                        const cd = crackBuf.getChannelData(0);
+                        for (let i = 0; i < crackLen; i++) {
+                            cd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (crackLen * 0.12));
+                        }
+                        const crackSrc = ctx.createBufferSource();
+                        const crackFilter = ctx.createBiquadFilter();
+                        const crackGain = ctx.createGain();
+                        crackSrc.buffer = crackBuf;
+                        crackFilter.type = 'highpass';
+                        crackFilter.frequency.setValueAtTime(2800, now);
+                        crackGain.gain.setValueAtTime(0.45 * intensity, now);
+                        crackSrc.connect(crackFilter);
+                        crackFilter.connect(crackGain);
+                        crackGain.connect(getSfxOutputNode(ctx) || ctx.destination);
+                        crackSrc.start(now);
+                        crackSrc.stop(now + crackDur);
+                    }
                 },
 
                 playLaserVariation(ctx, config) {
                     const now = ctx.currentTime;
                     const duration = config.duration;
                     const intensity = Math.max(0.3, Math.min(1, config.intensity));
+                    const useExp = config.sweepShape === 'exp'; // exp sweep sounds more electronic/aggressive
 
                     if (config.variant === 0) {
                         // Rising laser pulse
@@ -32193,8 +32276,13 @@
 
                         osc.type = 'square';
                         osc.frequency.setValueAtTime(config.startFreq, now);
-                        osc.frequency.linearRampToValueAtTime(config.endFreq, now + duration * 0.8);
-                        osc.frequency.linearRampToValueAtTime(config.startFreq, now + duration);
+                        if (useExp) {
+                            osc.frequency.exponentialRampToValueAtTime(Math.max(20, config.endFreq), now + duration * 0.8);
+                            osc.frequency.exponentialRampToValueAtTime(Math.max(20, config.startFreq), now + duration);
+                        } else {
+                            osc.frequency.linearRampToValueAtTime(config.endFreq, now + duration * 0.8);
+                            osc.frequency.linearRampToValueAtTime(config.startFreq, now + duration);
+                        }
 
                         gain.gain.setValueAtTime(0, now);
                         gain.gain.linearRampToValueAtTime(0.35 * intensity, now + duration * 0.1);
@@ -32207,7 +32295,7 @@
 
                         osc.connect(filter);
                         filter.connect(gain);
-                        gain.connect(ctx.destination);
+                        gain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         osc.start(now);
                         osc.stop(now + duration);
@@ -32261,7 +32349,11 @@
 
                         osc.type = 'triangle';
                         osc.frequency.setValueAtTime(config.startFreq, now);
-                        osc.frequency.linearRampToValueAtTime(config.endFreq, now + duration);
+                        if (useExp) {
+                            osc.frequency.exponentialRampToValueAtTime(Math.max(20, config.endFreq), now + duration);
+                        } else {
+                            osc.frequency.linearRampToValueAtTime(config.endFreq, now + duration);
+                        }
 
                         lfo.type = 'sine';
                         lfo.frequency.setValueAtTime(8, now);
@@ -32274,7 +32366,7 @@
                         osc.connect(gain);
                         lfo.connect(lfoGain);
                         lfoGain.connect(gain.gain);
-                        gain.connect(ctx.destination);
+                        gain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         lfo.start(now);
                         lfo.stop(now + duration);
@@ -32313,7 +32405,7 @@
                         noiseBuffer.connect(noiseGain);
                         oscGain.connect(mainGain);
                         noiseGain.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.76, now);
                         osc.start(now);
@@ -32356,7 +32448,7 @@
                         g1.connect(mainGain);
                         g2.connect(mainGain);
                         g3.connect(mainGain.gain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.76, now);
                         osc1.start(now);
@@ -32365,6 +32457,25 @@
                         osc2.stop(now + duration);
                         osc3.start(now);
                         osc3.stop(now + duration);
+                    }
+
+                    // Optional harmonics overlay — a sub-octave sine for richer texture
+                    if (config.harmonics) {
+                        const hOsc = ctx.createOscillator();
+                        const hGain = ctx.createGain();
+                        hOsc.type = 'sine';
+                        hOsc.frequency.setValueAtTime(config.startFreq * 0.5, now);
+                        if (useExp) {
+                            hOsc.frequency.exponentialRampToValueAtTime(Math.max(15, config.endFreq * 0.5), now + duration);
+                        } else {
+                            hOsc.frequency.linearRampToValueAtTime(config.endFreq * 0.5, now + duration);
+                        }
+                        hGain.gain.setValueAtTime(0.18 * intensity, now);
+                        hGain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+                        hOsc.connect(hGain);
+                        hGain.connect(getSfxOutputNode(ctx) || ctx.destination);
+                        hOsc.start(now);
+                        hOsc.stop(now + duration);
                     }
                 },
 
@@ -32443,7 +32554,7 @@
                         osc2.connect(g2);
                         g1.connect(mainGain);
                         g2.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.74, now);
                         osc1.start(now);
@@ -32483,7 +32594,7 @@
                         noiseBuffer.connect(noiseGain);
                         oscGain.connect(mainGain);
                         noiseGain.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.72, now);
                         osc.start(now);
@@ -32616,7 +32727,7 @@
                         noiseBuffer.connect(noiseGain);
                         oscGain.connect(mainGain);
                         noiseGain.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.7, now);
                         osc.start(now);
@@ -32705,7 +32816,7 @@
                         g1.connect(mainGain);
                         g2.connect(mainGain);
                         noiseGain.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.7, now);
                         osc1.start(now);
@@ -32736,7 +32847,7 @@
                         gain.gain.exponentialRampToValueAtTime(0.02, now + duration);
 
                         osc.connect(gain);
-                        gain.connect(ctx.destination);
+                        gain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         osc.start(now);
                         osc.stop(now + duration);
@@ -32769,7 +32880,7 @@
                         osc2.connect(g2);
                         g1.connect(mainGain);
                         g2.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.75, now);
                         osc1.start(now);
@@ -32812,7 +32923,7 @@
                         g1.connect(mainGain);
                         g2.connect(mainGain);
                         lfoGain.connect(g2.gain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.76, now);
                         osc1.start(now);
@@ -32880,6 +32991,8 @@
                     const now = ctx.currentTime;
                     const duration = config.duration;
                     const intensity = Math.max(0.3, Math.min(1, config.intensity || 0.6));
+                    const roughK = Math.max(0, Math.min(1, config.roughness || 0.4)); // 0=smooth, 1=coarse
+                    const crackEnvK = 0.6 - roughK * 0.45; // higher roughness → faster per-crackle decay
 
                     if (config.variant === 0) {
                         // Low rumbling flame
@@ -32898,7 +33011,7 @@
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
                         const data = noiseBuf.getChannelData(0);
                         for (let i = 0; i < noiseLen; i++) {
-                            const env = Math.exp(-i / (noiseLen * 0.5));
+                            const env = Math.exp(-i / (noiseLen * crackEnvK));
                             data[i] = (Math.random() * 2 - 1) * config.crackliness * 0.7 * env;
                         }
                         noiseBuffer.buffer = noiseBuf;
@@ -32913,7 +33026,7 @@
                         noiseBuffer.connect(noiseGain);
                         oscGain.connect(mainGain);
                         noiseGain.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.7, now);
                         osc.start(now);
@@ -32939,7 +33052,7 @@
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
                         const data = noiseBuf.getChannelData(0);
                         for (let i = 0; i < noiseLen; i++) {
-                            const env = Math.exp(-i / (noiseLen * 0.4));
+                            const env = Math.exp(-i / (noiseLen * crackEnvK));
                             data[i] = (Math.random() * 2 - 1) * config.crackliness * env;
                         }
                         noiseBuffer.buffer = noiseBuf;
@@ -32991,7 +33104,7 @@
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
                         const data = noiseBuf.getChannelData(0);
                         for (let i = 0; i < noiseLen; i++) {
-                            const env = Math.exp(-i / (noiseLen * 0.45));
+                            const env = Math.exp(-i / (noiseLen * crackEnvK));
                             data[i] = (Math.random() * 2 - 1) * config.crackliness * 0.9 * env;
                         }
                         noiseBuffer.buffer = noiseBuf;
@@ -33019,7 +33132,7 @@
                         g2.connect(mainGain);
                         noiseGain.connect(mainGain);
                         lfoGain.connect(g1.gain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.71, now);
                         osc1.start(now);
@@ -33031,6 +33144,21 @@
                         lfo.start(now);
                         lfo.stop(now + duration);
                     }
+
+                    // Optional sub-rumble layer — a deep sine at 25-55 Hz for weight
+                    if (config.subRumble) {
+                        const rumbleOsc = ctx.createOscillator();
+                        const rumbleGain = ctx.createGain();
+                        rumbleOsc.type = 'sine';
+                        rumbleOsc.frequency.setValueAtTime(25 + Math.random() * 30, now);
+                        rumbleGain.gain.setValueAtTime(0.3 * intensity, now);
+                        rumbleGain.gain.linearRampToValueAtTime(0.2 * intensity, now + duration * 0.5);
+                        rumbleGain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+                        rumbleOsc.connect(rumbleGain);
+                        rumbleGain.connect(getSfxOutputNode(ctx) || ctx.destination);
+                        rumbleOsc.start(now);
+                        rumbleOsc.stop(now + duration);
+                    }
                 },
 
                 playSpecialVariation(ctx, config) {
@@ -33038,60 +33166,63 @@
                     const duration = config.duration;
                     const spacing = config.spacing;
                     const intensity = 0.7;
+                    const bf = Math.max(150, config.baseFreq || 700); // config-driven base pitch
+                    const chord = config.chordMode || false;          // simultaneous vs sequential
 
                     if (config.variant === 0) {
-                        // Rising electronic blip sequence
+                        // Rising electronic blip sequence — pitch steps up from bf
                         for (let note = 0; note < config.numNotes; note++) {
-                            const noteStart = now + note * spacing;
+                            const noteStart = chord ? now : now + note * spacing;
                             const noteDuration = duration * 0.5;
+                            const noteFreq = bf + note * (bf * 0.35);
 
                             const osc = ctx.createOscillator();
                             const gain = ctx.createGain();
 
-                            const baseFreq = 600 + note * 250;
                             osc.type = 'square';
-                            osc.frequency.setValueAtTime(baseFreq, noteStart);
-                            osc.frequency.linearRampToValueAtTime(baseFreq * 1.4, noteStart + noteDuration);
+                            osc.frequency.setValueAtTime(noteFreq, noteStart);
+                            osc.frequency.linearRampToValueAtTime(noteFreq * 1.4, noteStart + noteDuration);
 
                             gain.gain.setValueAtTime(0.28 * intensity, noteStart);
                             gain.gain.exponentialRampToValueAtTime(0.01, noteStart + noteDuration);
 
                             osc.connect(gain);
-                            gain.connect(ctx.destination);
+                            gain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                             osc.start(noteStart);
                             osc.stop(noteStart + noteDuration);
                         }
 
                     } else if (config.variant === 1) {
-                        // Descending whoosh beeps
+                        // Descending whoosh beeps — starts at bf, steps down
                         for (let note = 0; note < config.numNotes; note++) {
-                            const noteStart = now + note * spacing;
+                            const noteStart = chord ? now : now + note * spacing;
                             const noteDuration = duration * 0.6;
+                            const noteFreq = Math.max(80, bf - note * (bf * 0.22));
 
                             const osc = ctx.createOscillator();
                             const gain = ctx.createGain();
 
-                            const baseFreq = 1200 - note * 300;
                             osc.type = 'sine';
-                            osc.frequency.setValueAtTime(baseFreq, noteStart);
-                            osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.6, noteStart + noteDuration);
+                            osc.frequency.setValueAtTime(noteFreq, noteStart);
+                            osc.frequency.exponentialRampToValueAtTime(Math.max(40, noteFreq * 0.6), noteStart + noteDuration);
 
                             gain.gain.setValueAtTime(0.26 * intensity, noteStart);
                             gain.gain.exponentialRampToValueAtTime(0.02, noteStart + noteDuration);
 
                             osc.connect(gain);
-                            gain.connect(ctx.destination);
+                            gain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                             osc.start(noteStart);
                             osc.stop(noteStart + noteDuration);
                         }
 
                     } else if (config.variant === 2) {
-                        // Pulsing tone with harmonics
+                        // Pulsing tone with harmonics — base + octave, steps from bf
                         for (let note = 0; note < config.numNotes; note++) {
-                            const noteStart = now + note * spacing;
+                            const noteStart = chord ? now : now + note * spacing;
                             const noteDuration = duration * 0.5;
+                            const noteFreq = bf + note * (bf * 0.28);
 
                             const osc1 = ctx.createOscillator();
                             const osc2 = ctx.createOscillator();
@@ -33099,14 +33230,13 @@
                             const g2 = ctx.createGain();
                             const mainGain = ctx.createGain();
 
-                            const baseFreq = 700 + note * 200;
                             osc1.type = 'triangle';
-                            osc1.frequency.setValueAtTime(baseFreq, noteStart);
-                            osc1.frequency.linearRampToValueAtTime(baseFreq * 1.2, noteStart + noteDuration);
+                            osc1.frequency.setValueAtTime(noteFreq, noteStart);
+                            osc1.frequency.linearRampToValueAtTime(noteFreq * 1.2, noteStart + noteDuration);
 
                             osc2.type = 'sine';
-                            osc2.frequency.setValueAtTime(baseFreq * 2, noteStart);
-                            osc2.frequency.linearRampToValueAtTime(baseFreq * 2.2, noteStart + noteDuration);
+                            osc2.frequency.setValueAtTime(noteFreq * 2, noteStart);
+                            osc2.frequency.linearRampToValueAtTime(noteFreq * 2.2, noteStart + noteDuration);
 
                             g1.gain.setValueAtTime(0.24 * intensity, noteStart);
                             g1.gain.exponentialRampToValueAtTime(0.01, noteStart + noteDuration);
@@ -33118,7 +33248,7 @@
                             osc2.connect(g2);
                             g1.connect(mainGain);
                             g2.connect(mainGain);
-                            mainGain.connect(ctx.destination);
+                            mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                             mainGain.gain.setValueAtTime(0.75, noteStart);
 
@@ -33129,25 +33259,25 @@
                         }
 
                     } else {
-                        // Chirpy ascending sweep beeps
+                        // Chirpy ascending sweep beeps — starts at bf * 0.75, steps up
                         for (let note = 0; note < config.numNotes; note++) {
-                            const noteStart = now + note * spacing;
+                            const noteStart = chord ? now : now + note * spacing;
                             const noteDuration = duration * 0.55;
+                            const noteFreq = bf * 0.75 + note * (bf * 0.42);
 
                             const osc = ctx.createOscillator();
                             const gain = ctx.createGain();
 
-                            const baseFreq = 500 + note * 300;
                             osc.type = 'sine';
-                            osc.frequency.setValueAtTime(baseFreq, noteStart);
-                            osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.6, noteStart + noteDuration * 0.7);
-                            osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, noteStart + noteDuration);
+                            osc.frequency.setValueAtTime(noteFreq, noteStart);
+                            osc.frequency.exponentialRampToValueAtTime(noteFreq * 1.6, noteStart + noteDuration * 0.7);
+                            osc.frequency.exponentialRampToValueAtTime(Math.max(40, noteFreq * 0.8), noteStart + noteDuration);
 
                             gain.gain.setValueAtTime(0.27 * intensity, noteStart);
                             gain.gain.exponentialRampToValueAtTime(0.01, noteStart + noteDuration);
 
                             osc.connect(gain);
-                            gain.connect(ctx.destination);
+                            gain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                             osc.start(noteStart);
                             osc.stop(noteStart + noteDuration);
@@ -33159,6 +33289,7 @@
                     const now = ctx.currentTime;
                     const duration = config.duration;
                     const intensity = Math.max(0.3, Math.min(1, config.intensity || 0.6));
+                    const rp = Math.max(30, Math.min(220, config.rockPitch || 100)); // config-driven rock body pitch
 
                     if (config.variant === 0) {
                         // Rocky crunch break
@@ -33172,12 +33303,12 @@
                         const filter = ctx.createBiquadFilter();
 
                         osc1.type = 'sine';
-                        osc1.frequency.setValueAtTime(80 + Math.random() * 60, now);
-                        osc1.frequency.exponentialRampToValueAtTime(40, now + duration * 0.8);
+                        osc1.frequency.setValueAtTime(rp, now);
+                        osc1.frequency.exponentialRampToValueAtTime(Math.max(15, rp * 0.45), now + duration * 0.8);
 
                         osc2.type = 'triangle';
-                        osc2.frequency.setValueAtTime(150 + Math.random() * 80, now);
-                        osc2.frequency.exponentialRampToValueAtTime(50, now + duration * 0.7);
+                        osc2.frequency.setValueAtTime(rp * 1.85, now);
+                        osc2.frequency.exponentialRampToValueAtTime(Math.max(20, rp * 0.55), now + duration * 0.7);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -33227,8 +33358,8 @@
                         const mainGain = ctx.createGain();
 
                         osc.type = 'sawtooth';
-                        osc.frequency.setValueAtTime(120 + Math.random() * 80, now);
-                        osc.frequency.exponentialRampToValueAtTime(50, now + duration * 0.8);
+                        osc.frequency.setValueAtTime(rp * 1.3, now);
+                        osc.frequency.exponentialRampToValueAtTime(Math.max(18, rp * 0.45), now + duration * 0.8);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -33250,7 +33381,7 @@
                         noiseBuffer.connect(noiseGain);
                         oscGain.connect(mainGain);
                         noiseGain.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.7, now);
                         osc.start(now);
@@ -33269,12 +33400,12 @@
                         const mainGain = ctx.createGain();
 
                         osc1.type = 'sine';
-                        osc1.frequency.setValueAtTime(110 + Math.random() * 70, now);
-                        osc1.frequency.exponentialRampToValueAtTime(45, now + duration * 0.9);
+                        osc1.frequency.setValueAtTime(rp * 1.15, now);
+                        osc1.frequency.exponentialRampToValueAtTime(Math.max(18, rp * 0.4), now + duration * 0.9);
 
                         osc2.type = 'sine';
-                        osc2.frequency.setValueAtTime(220 + Math.random() * 100, now);
-                        osc2.frequency.exponentialRampToValueAtTime(75, now + duration * 0.8);
+                        osc2.frequency.setValueAtTime(rp * 2.3, now);
+                        osc2.frequency.exponentialRampToValueAtTime(Math.max(25, rp * 0.65), now + duration * 0.8);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -33301,7 +33432,7 @@
                         g1.connect(mainGain);
                         g2.connect(mainGain);
                         noiseGain.connect(mainGain);
-                        mainGain.connect(ctx.destination);
+                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                         mainGain.gain.setValueAtTime(0.7, now);
                         osc1.start(now);
@@ -33323,12 +33454,12 @@
                         const filter = ctx.createBiquadFilter();
 
                         osc1.type = 'triangle';
-                        osc1.frequency.setValueAtTime(140 + Math.random() * 90, now);
-                        osc1.frequency.exponentialRampToValueAtTime(55, now + duration * 0.75);
+                        osc1.frequency.setValueAtTime(rp * 1.6, now);
+                        osc1.frequency.exponentialRampToValueAtTime(Math.max(20, rp * 0.5), now + duration * 0.75);
 
                         osc2.type = 'square';
-                        osc2.frequency.setValueAtTime(280 + Math.random() * 120, now);
-                        osc2.frequency.exponentialRampToValueAtTime(90, now + duration * 0.7);
+                        osc2.frequency.setValueAtTime(rp * 3.0, now);
+                        osc2.frequency.exponentialRampToValueAtTime(Math.max(30, rp * 0.8), now + duration * 0.7);
 
                         const noiseLen = ctx.sampleRate * duration;
                         const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
@@ -33369,6 +33500,30 @@
                         noiseBuffer.start(now);
                         noiseBuffer.stop(now + duration);
                     }
+
+                    // Optional gravel layer — gritty high-frequency noise burst on impact
+                    if (config.gravel) {
+                        const gDur = Math.min(0.12, duration * 0.25);
+                        const gLen = Math.floor(ctx.sampleRate * gDur);
+                        const gBuf = ctx.createBuffer(1, gLen, ctx.sampleRate);
+                        const gd = gBuf.getChannelData(0);
+                        for (let i = 0; i < gLen; i++) {
+                            gd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (gLen * 0.3));
+                        }
+                        const gSrc = ctx.createBufferSource();
+                        const gFilter = ctx.createBiquadFilter();
+                        const gGain = ctx.createGain();
+                        gSrc.buffer = gBuf;
+                        gFilter.type = 'highpass';
+                        gFilter.frequency.setValueAtTime(1800, now);
+                        gGain.gain.setValueAtTime(0.35 * intensity, now);
+                        gGain.gain.exponentialRampToValueAtTime(0.01, now + gDur);
+                        gSrc.connect(gFilter);
+                        gFilter.connect(gGain);
+                        gGain.connect(getSfxOutputNode(ctx) || ctx.destination);
+                        gSrc.start(now);
+                        gSrc.stop(now + gDur);
+                    }
                 },
 
                 playGenericVariation(ctx, config) {
@@ -33383,7 +33538,7 @@
                     gain.gain.exponentialRampToValueAtTime(0.01, now + config.duration);
 
                     osc.connect(gain);
-                    gain.connect(ctx.destination);
+                    gain.connect(getSfxOutputNode(ctx) || ctx.destination);
 
                     osc.start(now);
                     osc.stop(now + config.duration);
@@ -33391,142 +33546,108 @@
 
                 updatePanel() {
                     const panel = document.getElementById('soundTestingPanel');
-                    if (!panel) { console.log('updatePanel: panel not found'); return; }
+                    if (!panel) return;
 
                     const cat = this.currentCategory;
-                    console.log('updatePanel for category:', cat, 'variations:', this.variations.length);
+                    if (!cat) {
+                        const varContainer = panel.querySelector('#variationsList');
+                        if (varContainer) varContainer.innerHTML = '<div style="color:#666; text-align:center; padding:20px;">Select a sound above</div>';
+                        return;
+                    }
 
-                    const prefs = this.preferences[cat] || { approved: null, reserved: [], discarded: [] };
+                    if (!this.preferences[cat]) this.preferences[cat] = { approved: null, reserved: [], discarded: [] };
+                    const prefs = this.preferences[cat];
 
-                    let html = `<div style="margin-bottom: 10px;">
+                    const btnStyle = (bg, border) =>
+                        `padding:3px 8px; font-size:11px; background:${bg}; border:1px solid ${border}; color:#fff; border-radius:2px; cursor:pointer; line-height:18px;`;
+
+                    let html = `<div style="margin-bottom:8px; font-size:11px; color:#adf;">
                         <strong>${cat}</strong>
-                        ${prefs.approved !== null ? '<span style="color:#0f0;"> ✓ APPROVED</span>' : ''}
+                        ${prefs.approved !== null ? '<span style="color:#4f4; margin-left:6px; font-size:10px;">● assigned to game</span>' : ''}
                     </div>`;
 
-                    this.variations.forEach((v, i) => {
-                        const slotState = this.slotStates[cat] && this.slotStates[cat][i];
+                    for (let i = 0; i < 5; i++) {
+                        const v = this.variations[i];
                         const isApproved = prefs.approved === i;
-                        const isReserved = prefs.reserved.includes(i);
-                        const isDiscarded = prefs.discarded.includes(i);
-                        const isEmpty = isDiscarded || !v;
+                        const isEmpty = !v;
 
-                        // Determine slot state display
-                        let slotStateDisplay = '';
+                        let border = '#333';
+                        let bg = 'rgba(40,40,80,0.25)';
+                        let statusLabel = '';
+
                         if (isEmpty) {
-                            slotStateDisplay = '<span style="color:#888;">(empty)</span>';
+                            statusLabel = '<span style="color:#555; font-size:10px;">(empty)</span>';
                         } else if (isApproved) {
-                            slotStateDisplay = '<span style="color:#0f0;">✓ assigned</span>';
+                            border = '#4a8';
+                            bg = 'rgba(60,140,80,0.12)';
+                            statusLabel = '<span style="color:#4f4; font-size:10px; font-weight:bold;">_a  ← assigned</span>';
                         } else {
-                            slotStateDisplay = '<span style="color:#adf;">(unassigned)</span>';
+                            border = '#4a6ea8';
+                            bg = 'rgba(74,110,168,0.12)';
+                            statusLabel = '<span style="color:#7af; font-size:10px;">ready</span>';
                         }
 
-                        let status = '';
-                        if (isReserved) status = '<span style="color:#ff0;">⚡ kept</span>';
+                        html += `<div style="margin:5px 0; padding:7px 8px; background:${bg}; border-left:3px solid ${border}; border-radius:2px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                                <span style="font-size:11px; color:#ccc;">Slot ${i + 1}</span>
+                                ${statusLabel}
+                            </div>
+                            <div style="display:flex; gap:4px; flex-wrap:wrap;">`;
 
-                        html += `<div style="margin: 8px 0; padding: 6px; background: rgba(100,150,255,0.1); border-left: 2px solid #4a90e2;">
-                            <div>Slot ${i + 1} ${slotStateDisplay} ${status}</div>
-                            <button data-action="play" data-index="${i}" style="padding:3px 8px; margin:2px 2px 2px 0; font-size:11px; background: rgba(74,144,226,0.4); border: 1px solid #4a90e2; color: #fff; border-radius: 2px; cursor: pointer;">▶ Play</button>
-                            <button data-action="genindividual" data-index="${i}" style="padding:3px 8px; margin:2px 2px 2px 0; font-size:11px; background: rgba(150,100,200,0.3); border: 1px solid #b4a; color: #fff; border-radius: 2px; cursor: pointer;">⚡ Gen</button>
-                            <button data-action="assign" data-index="${i}" style="padding:3px 8px; margin:2px 2px 2px 0; font-size:11px; background: rgba(100,200,100,0.3); border: 1px solid #5c8; color: #fff; border-radius: 2px; cursor: pointer;">→ Assign</button>
-                            ${isApproved ? `<button data-action="revert" data-index="${i}" style="padding:3px 8px; margin:2px 2px 2px 0; font-size:11px; background: rgba(200,150,100,0.3); border: 1px solid #b84; color: #fff; border-radius: 2px; cursor: pointer;">↶ Revert</button>` : ''}
-                            <br>
-                            <button data-action="keep" data-index="${i}" style="padding:3px 8px; margin:2px 2px 2px 0; font-size:11px; background: rgba(74,144,226,0.3); border: 1px solid #4a90e2; color: #fff; border-radius: 2px; cursor: pointer;">Keep</button>
-                            <button data-action="reserve" data-index="${i}" style="padding:3px 8px; margin:2px 2px 2px 0; font-size:11px; background: rgba(74,144,226,0.3); border: 1px solid #4a90e2; color: #fff; border-radius: 2px; cursor: pointer; ${isReserved ? 'background:#ff0; color:#000;' : ''}">⚡</button>
-                            <button data-action="discard" data-index="${i}" style="padding:3px 8px; margin:2px 2px 2px 0; font-size:11px; background: rgba(74,144,226,0.3); border: 1px solid #4a90e2; color: #fff; border-radius: 2px; cursor: pointer; ${isDiscarded ? 'background:#f00; color:#fff;' : ''}">✗</button>
-                        </div>`;
-                    });
+                        if (isEmpty) {
+                            html += `<button data-action="gen" data-index="${i}" style="${btnStyle('rgba(150,100,200,0.4)', '#b4a')}">⚡ Generate</button>`;
+                        } else {
+                            html += `<button data-action="play"       data-index="${i}" style="${btnStyle('rgba(74,144,226,0.4)', '#4a90e2')}">▶ Play</button>`;
+                            html += `<button data-action="gen"        data-index="${i}" style="${btnStyle('rgba(150,100,200,0.4)', '#b4a')}">⚡ Gen</button>`;
+                            if (!isApproved) {
+                                html += `<button data-action="keep"   data-index="${i}" style="${btnStyle('rgba(80,180,100,0.4)', '#5b8')}">✓ Keep</button>`;
+                            }
+                            html += `<button data-action="delete_slot" data-index="${i}" style="${btnStyle('rgba(180,60,60,0.4)', '#c55')}">🗑</button>`;
+                        }
 
-                    html += `<div style="margin-top: 15px; border-top: 1px solid #4a90e2; padding-top: 10px;">
-                        <button id="generateMoreBtn" style="width: 100%; padding: 6px; margin-bottom: 5px; font-size: 11px; cursor: pointer; background: rgba(74,144,226,0.4); border: 1px solid #4a90e2; color: #fff; border-radius: 2px;">⚙ Generate 5 More</button>
-                        <button id="exportBtn" style="width: 100%; padding: 6px; font-size: 11px; cursor: pointer; background: rgba(74,144,226,0.4); border: 1px solid #4a90e2; color: #fff; border-radius: 2px;">💾 Export</button>
+                        html += `</div></div>`;
+                    }
+
+                    // Footer buttons
+                    const hasUndo = this.undoStack.length > 0;
+                    html += `<div style="margin-top:12px; border-top:1px solid #333; padding-top:10px; display:flex; flex-direction:column; gap:5px;">
+                        <button id="generateAllBtn" style="width:100%; padding:6px; font-size:11px; cursor:pointer; background:rgba(74,144,226,0.35); border:1px solid #4a90e2; color:#fff; border-radius:2px;">⚙ Generate All 5 (new sounds)</button>
+                        ${hasUndo ? `<button id="undoBtn" style="width:100%; padding:6px; font-size:11px; cursor:pointer; background:rgba(200,150,50,0.35); border:1px solid #b83; color:#fff; border-radius:2px;">↶ Undo Last Keep</button>` : ''}
                     </div>`;
 
                     const varContainer = panel.querySelector('#variationsList');
-                    if (varContainer) {
-                        varContainer.innerHTML = html;
-                        console.log('updatePanel: rendered variations');
-                    }
+                    if (varContainer) varContainer.innerHTML = html;
 
-                    // Bind buttons (only for variation action buttons)
+                    // Bind slot action buttons
                     panel.querySelectorAll('[data-action]').forEach(btn => {
                         btn.onclick = (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            const action = btn.getAttribute('data-action');
-                            const index = parseInt(btn.getAttribute('data-index'));
-                            this.handleAction(action, index);
+                            this.handleAction(btn.getAttribute('data-action'), parseInt(btn.getAttribute('data-index')));
                         };
-
-                        // Add tooltips on hover
-                        let tooltipTimeout = null;
-                        const action = btn.getAttribute('data-action');
-                        const tooltips = {
-                            keep: 'Approve this variation - marks it as the selected sound',
-                            reserve: 'Reserve this variation - keep it as a backup option',
-                            discard: 'Discard this variation - reject this sound'
-                        };
-
-                        btn.addEventListener('mouseenter', () => {
-                            tooltipTimeout = setTimeout(() => {
-                                if (tooltips[action]) {
-                                    const tooltip = document.createElement('div');
-                                    tooltip.className = 'sound-test-tooltip';
-                                    tooltip.textContent = tooltips[action];
-                                    tooltip.style.cssText = `
-                                        position: absolute;
-                                        background: rgba(0, 0, 0, 0.9);
-                                        color: #adf;
-                                        padding: 6px 10px;
-                                        border-radius: 3px;
-                                        font-size: 10px;
-                                        border: 1px solid #4a90e2;
-                                        z-index: 10001;
-                                        pointer-events: none;
-                                        white-space: nowrap;
-                                        box-shadow: 0 0 8px rgba(74, 144, 226, 0.5);
-                                    `;
-                                    btn.parentElement.appendChild(tooltip);
-                                    const rect = btn.getBoundingClientRect();
-                                    tooltip.style.left = (rect.left - 10) + 'px';
-                                    tooltip.style.top = (rect.bottom + 5) + 'px';
-                                    btn._tooltip = tooltip;
-                                }
-                            }, 2000);
-                        });
-
-                        btn.addEventListener('mouseleave', () => {
-                            if (tooltipTimeout) clearTimeout(tooltipTimeout);
-                            if (btn._tooltip) {
-                                btn._tooltip.remove();
-                                btn._tooltip = null;
-                            }
-                        });
                     });
 
-                    // Re-bind generate and export buttons
-                    const genBtn = panel.querySelector('#generateMoreBtn');
-                    if (genBtn) {
-                        genBtn.onclick = (e) => {
+                    const genAllBtn = panel.querySelector('#generateAllBtn');
+                    if (genAllBtn) {
+                        genAllBtn.onclick = (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            console.log('Generate More button clicked');
-                            if (this.currentCategory) {
-                                console.log('Generating 5 more variations for:', this.currentCategory);
-                                this.variations = this.generateVariations(this.currentCategory, 5);
-                                this.updatePanel();
-                            }
+                            if (!this.currentCategory) return;
+                            // Preserve approved slot — only regenerate non-approved slots
+                            const approvedIdx = (this.preferences[this.currentCategory] || {}).approved;
+                            const newVars = this.generateVariations(this.currentCategory, 5);
+                            newVars.forEach((v, i) => {
+                                if (i !== approvedIdx) this.variations[i] = v;
+                            });
+                            this.categoryVariations[this.currentCategory] = this.variations;
+                            this.updatePanel();
+                            this.showToast('5 new sounds generated');
                         };
-                    } else {
-                        console.log('generateMoreBtn not found!');
                     }
 
-                    const expBtn = panel.querySelector('#exportBtn');
-                    if (expBtn) {
-                        expBtn.onclick = (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            this.exportPreferences();
-                        };
+                    const undoBtn = panel.querySelector('#undoBtn');
+                    if (undoBtn) {
+                        undoBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this.undoLastKeep(); };
                     }
                 },
 
@@ -33551,160 +33672,30 @@
                         this.preferences[cat] = { approved: null, reserved: [], discarded: [] };
                     }
 
-                    const prefs = this.preferences[cat];
-
                     if (action === 'play') {
-                        this.playVariation(index);
-                    } else if (action === 'genindividual') {
-                        // Generate new sound for empty slot
-                        const slotState = this.slotStates[cat][index];
-                        if (slotState && slotState.state !== 'empty') {
-                            this.showToast('Slot not empty - press Keep or Assign first');
-                            return;
-                        }
+                        if (this.variations[index]) this.playVariation(index);
 
-                        this.variations[index] = this.generateVariations(cat, 1)[0];
-                        if (this.variations[index]) {
-                            if (slotState) {
-                                slotState.state = 'unassigned';
-                                slotState.soundId = `${cat}_slot_${index}`;
-                            }
-                            this.saveSlotStates();
-                        }
+                    } else if (action === 'gen') {
+                        // Always replace this slot with a fresh unique sound — no confirmation
+                        const newVar = this.generateVariations(cat, 1)[0];
+                        this.variations[index] = newVar;
+                        this.categoryVariations[cat] = this.variations;
+                        // Auto-play so you can hear it immediately
+                        setTimeout(() => this.playVariation(index), 30);
                         this.updatePanel();
-                    } else if (action === 'assign') {
-                        // ASSIGN: Move sound to game, backup old one, mark as assigned
-                        const v = this.variations[index];
-                        if (!v) return;
+                        this.showToast('Sound Generated');
 
-                        const currentAssignment = this.soundAssignments[cat] || 'Unassigned';
-                        const confirmed = confirm(`Assign "${cat}"?\n\nCurrent: ${currentAssignment}\n\nThis will create a backup of the old sound for reverting.`);
-
-                        if (confirmed) {
-                            // Create reserved sound and assign it
-                            const reservedName = this.reserveSound(cat, v, index);
-                            this.assignReservedSound(reservedName, cat, currentAssignment);
-
-                            // Mark slot as assigned
-                            const slotState = this.slotStates[cat][index];
-                            if (slotState) {
-                                slotState.state = 'assigned';
-                                slotState.soundId = `${cat}_slot_${index}`;
-                            }
-
-                            // Keep the variation in the slot but mark as assigned
-                            prefs.approved = index;
-                            prefs.reserved = prefs.reserved.filter(i => i !== index);
-
-                            this.savePreferences();
-                            this.saveSlotStates();
-                            this.updatePanel();
-                            if (soundMixer) {
-                                soundMixer.renderStrips();
-                            }
-                            this.showToast(`Assigned "${cat}" to game`);
-                        }
-                    } else if (action === 'revert') {
-                        // REVERT: Go back to previous game sound
-                        const backup = this.soundBackups[cat];
-                        if (!backup) {
-                            this.showToast('No backup available');
-                            return;
-                        }
-
-                        const confirmed = confirm(`Revert "${cat}" to previous sound?\n\nCurrent backup will remain in unassigned pool.`);
-                        if (confirmed) {
-                            // Revert to previous
-                            this.revertSound(cat);
-
-                            // Mark slot as unassigned (no longer active in game)
-                            const slotState = this.slotStates[cat][index];
-                            if (slotState) {
-                                slotState.state = 'unassigned';
-                            }
-
-                            // Keep the variation in the slot but mark unassigned
-                            prefs.approved = null;
-
-                            this.savePreferences();
-                            this.saveSlotStates();
-                            this.updatePanel();
-                            if (soundMixer) {
-                                soundMixer.renderStrips();
-                            }
-                            this.showToast(`Reverted "${cat}" to previous sound`);
-                        }
                     } else if (action === 'keep') {
-                        // KEEP: Save sound with name, add to unassigned pool, mark slot empty
-                        const v = this.variations[index];
-                        if (!v) return;
+                        // KEEP: Assign this generated sound as the active game sound.
+                        // The previously approved variation (if any) is saved to the unassigned pool
+                        // with a _u# label so you can retrieve it later.
+                        this.performKeep(cat, index);
 
-                        const keepName = `${cat}_kept_${Date.now()}_${index}`;
-                        const soundId = `${cat}_slot_${index}`;
+                    } else if (action === 'delete_slot') {
+                        this.performDeleteSlot(cat, index);
 
-                        // Add to unassigned pool
-                        this.reserveSound(cat, v, index);
-
-                        // Mark slot as empty for next generation
-                        const slotState = this.slotStates[cat][index];
-                        if (slotState) {
-                            slotState.state = 'empty';
-                            slotState.soundId = null;
-                        }
-
-                        // Clear the variation
-                        this.variations[index] = null;
-                        prefs.reserved = prefs.reserved.filter(i => i !== index);
-                        prefs.approved = null;
-
-                        this.savePreferences();
-                        this.saveSlotStates();
-                        this.updatePanel();
-                        // Sync mixer
-                        if (soundMixer) {
-                            soundMixer.renderStrips();
-                        }
-                        this.showToast(`Kept sound, slot now empty`);
-
-                    } else if (action === 'reserve') {
-                        // Legacy reserve (kept for compatibility)
-                        if (!prefs.reserved.includes(index)) prefs.reserved.push(index);
-                        prefs.reserved = [...new Set(prefs.reserved)];
-                        prefs.discarded = prefs.discarded.filter(i => i !== index);
-                        if (prefs.approved === index) prefs.approved = null;
-
-                        const v = this.variations[index];
-                        if (v) {
-                            this.reserveSound(cat, v, index);
-                        }
-
-                        this.savePreferences();
-                        this.updatePanel();
-                    } else if (action === 'discard') {
-                        // DISCARD: Clear slot, mark as empty, delete any backups
-                        if (!prefs.discarded.includes(index)) prefs.discarded.push(index);
-                        prefs.discarded = [...new Set(prefs.discarded)];
-                        prefs.reserved = prefs.reserved.filter(i => i !== index);
-                        if (prefs.approved === index) prefs.approved = null;
-
-                        // Clear the slot
-                        this.variations[index] = null;
-                        this.markSlotEmpty(cat, index);
-
-                        // Mark slot as empty
-                        const slotState = this.slotStates[cat][index];
-                        if (slotState) {
-                            slotState.state = 'empty';
-                            slotState.soundId = null;
-                        }
-
-                        this.savePreferences();
-                        this.saveSlotStates();
-                        this.updatePanel();
-                        if (soundMixer) {
-                            soundMixer.renderStrips();
-                        }
-                        this.showToast('Discarded sound');
+                    } else if (action === 'undo') {
+                        this.undoLastKeep();
                     }
                 },
 
@@ -33721,11 +33712,7 @@
 
                     catList.onchange = (e) => {
                         const cat = e.target.value;
-                        if (cat) {
-                            this.selectCategory(cat);
-                            this.variations = this.generateVariations(cat, 5);
-                            this.updatePanel();
-                        }
+                        if (cat) this.selectCategory(cat);
                     };
 
                     // Bind all panel buttons
@@ -33739,26 +33726,36 @@
                     const container = panel.querySelector('#unassignedContent');
                     if (!container) return;
 
-                    let html = '<div style="padding: 10px; max-height: 400px; overflow-y: auto;">';
+                    // Filter to only valid (non-empty) sounds
+                    const validSounds = this.unassignedSounds.filter(id => {
+                        const r = this.reservedSounds[id];
+                        return r && !r.empty && r.generatedParams;
+                    });
 
-                    if (this.unassignedSounds.length === 0) {
-                        html += '<div style="color: #888; text-align: center; padding: 20px;">No reserved sounds yet</div>';
+                    let html = '<div style="padding: 8px;">';
+
+                    if (validSounds.length === 0) {
+                        html += '<div style="color: #666; text-align: center; padding: 20px; font-size:11px;">No unassigned sounds yet.<br><span style="font-size:10px; color:#555;">Use ✓ Keep in Variations tab to save sounds here.</span></div>';
                     } else {
-                        this.unassignedSounds.forEach((soundName) => {
-                            const reserved = this.reservedSounds[soundName];
-                            if (!reserved) return;
+                        html += `<div style="font-size:10px; color:#666; margin-bottom:8px;">${validSounds.length} unassigned sound${validSounds.length !== 1 ? 's' : ''}</div>`;
+                        validSounds.forEach((soundId) => {
+                            const reserved = this.reservedSounds[soundId];
+                            const label = reserved.label || soundId;
+                            const cat = reserved.backupOf || '?';
+                            const num = reserved.unassignedNum ? `_u${reserved.unassignedNum}` : '';
+                            const typeLabel = (reserved.generatedParams && reserved.generatedParams.type) || 'sound';
 
-                            const isBackup = reserved.backupOf;
-                            html += `<div style="margin: 8px 0; padding: 8px; background: rgba(100,150,200,0.2); border-left: 3px solid #6a8; border-radius: 3px;">
-                                <div style="color: #adf; font-weight: bold; font-size: 11px; margin-bottom: 4px;">
-                                    ${soundName.substring(0, 40)}
+                            html += `<div style="margin: 6px 0; padding: 7px 8px; background: rgba(60,80,120,0.25); border-left: 3px solid #48a; border-radius: 2px;">
+                                <div style="color: #7af; font-weight: bold; font-size: 11px; margin-bottom: 2px;">
+                                    ${cat}<span style="color:#4af; font-size:10px;">${num}</span>
                                 </div>
-                                <div style="color: #888; font-size: 10px; margin-bottom: 6px;">
-                                    ${reserved.empty ? '(slot empty)' : `Backup of: ${isBackup}`}
+                                <div style="color: #666; font-size: 9px; margin-bottom: 5px;">
+                                    ${typeLabel} — displaced by a newer assignment
                                 </div>
-                                <div style="display: flex; gap: 4px;">
-                                    <button class="unassigned-play" data-sound="${soundName}" style="padding: 3px 6px; font-size: 10px; background: rgba(100,200,100,0.3); border: 1px solid #5c8; color: #fff; cursor: pointer; border-radius: 2px;">▶ Play</button>
-                                    <button class="unassigned-delete" data-sound="${soundName}" style="padding: 3px 6px; font-size: 10px; background: rgba(200,100,100,0.3); border: 1px solid #c88; color: #fff; cursor: pointer; border-radius: 2px;">🗑 Delete</button>
+                                <div style="display: flex; gap: 4px; flex-wrap:wrap;">
+                                    <button class="unassigned-play" data-sound="${soundId}" style="padding:3px 7px; font-size:10px; background:rgba(74,144,226,0.4); border:1px solid #4a90e2; color:#fff; cursor:pointer; border-radius:2px;">▶ Play</button>
+                                    <button class="unassigned-assign" data-sound="${soundId}" style="padding:3px 7px; font-size:10px; background:rgba(80,180,100,0.4); border:1px solid #5b8; color:#fff; cursor:pointer; border-radius:2px;">▲ Assign</button>
+                                    <button class="unassigned-delete" data-sound="${soundId}" style="padding:3px 7px; font-size:10px; background:rgba(180,60,60,0.35); border:1px solid #c55; color:#fff; cursor:pointer; border-radius:2px;">🗑 Delete</button>
                                 </div>
                             </div>`;
                         });
@@ -33767,28 +33764,252 @@
                     html += '</div>';
                     container.innerHTML = html;
 
-                    // Bind buttons
+                    // Play: use synthesis
                     panel.querySelectorAll('.unassigned-play').forEach(btn => {
                         btn.onclick = (e) => {
                             e.preventDefault();
-                            const soundName = btn.getAttribute('data-sound');
-                            this.playLibrarySound(soundName);
+                            const soundId = btn.getAttribute('data-sound');
+                            const reserved = this.reservedSounds[soundId];
+                            if (reserved && reserved.generatedParams) {
+                                this.playVariationConfig(reserved.generatedParams);
+                            }
+                        };
+                    });
+
+                    // Assign: make this the active game variation for its category
+                    panel.querySelectorAll('.unassigned-assign').forEach(btn => {
+                        btn.onclick = (e) => {
+                            e.preventDefault();
+                            const soundId = btn.getAttribute('data-sound');
+                            this.performAssignFromPool(soundId);
+                            this.updateUnassignedView();
+                            if (soundMixer) soundMixer.renderStrips();
                         };
                     });
 
                     panel.querySelectorAll('.unassigned-delete').forEach(btn => {
                         btn.onclick = (e) => {
                             e.preventDefault();
-                            const soundName = btn.getAttribute('data-sound');
-                            if (confirm(`Delete sound?\n\n${soundName}`)) {
-                                this.deleteSound(soundName);
+                            const soundId = btn.getAttribute('data-sound');
+                            const reserved = this.reservedSounds[soundId];
+                            const label = (reserved && reserved.label) || soundId;
+                            if (confirm(`Permanently delete unassigned sound?\n\n${label}\n\nThis cannot be undone.`)) {
+                                this.deleteSound(soundId);
                                 this.updateUnassignedView();
-                                if (soundMixer) {
-                                    soundMixer.renderStrips();
-                                }
+                                if (soundMixer) soundMixer.renderStrips();
                             }
                         };
                     });
+                },
+
+                // ── KEEP: assign generated sound to game, displace old to _u# pool ──
+                performKeep(cat, index) {
+                    const v = this.variations[index];
+                    if (!v) return;
+
+                    const prefs = this.preferences[cat];
+
+                    // If there was a different previously approved variation, save it to pool
+                    let displacedId = null;
+                    if (prefs.approved !== null && prefs.approved !== index) {
+                        const oldV = this.variations[prefs.approved];
+                        if (oldV) {
+                            const num = this.nextUnassignedNum++;
+                            displacedId = `${cat}_u${num}`;
+                            this.reservedSounds[displacedId] = {
+                                backupOf: cat,
+                                generatedParams: JSON.parse(JSON.stringify(oldV)),
+                                empty: false,
+                                label: `${cat}_u${num}`,
+                                unassignedNum: num
+                            };
+                            this.unassignedSounds.push(displacedId);
+                        }
+                    }
+
+                    // Push to undo stack
+                    this.undoStack.push({
+                        cat,
+                        keptIndex: index,
+                        prevApprovedIndex: prefs.approved,
+                        displacedId
+                    });
+                    if (this.undoStack.length > 30) this.undoStack.shift();
+
+                    // Mark this slot as the approved game sound
+                    prefs.approved = index;
+
+                    this.savePreferences();
+                    this.saveReservedSounds();
+                    this.saveSlotStates();
+                    this.updatePanel();
+                    if (soundMixer) soundMixer.renderStrips();
+                    this.showToast(`✓ Kept — assigned to game`);
+                },
+
+                // ── DELETE SLOT: permanent, with "not undoable" confirmation ──
+                performDeleteSlot(cat, index) {
+                    const v = this.variations[index];
+                    if (!v) {
+                        this.showToast('Slot is already empty');
+                        return;
+                    }
+
+                    const prefs = this.preferences[cat];
+                    const isAssigned = prefs && prefs.approved === index;
+                    const msg = `Permanently delete this generated sound from Slot ${index + 1}?`
+                        + (isAssigned ? '\n\n⚠ This slot is currently assigned to the game. The slot will become empty.' : '')
+                        + '\n\nThis cannot be undone.';
+
+                    if (!confirm(msg)) return;
+
+                    if (isAssigned) prefs.approved = null;
+                    this.variations[index] = null;
+                    this.categoryVariations[cat] = this.variations;
+
+                    this.savePreferences();
+                    this.saveSlotStates();
+                    this.updatePanel();
+                    if (soundMixer) soundMixer.renderStrips();
+                    this.showToast('Sound permanently deleted');
+                },
+
+                // ── ASSIGN FROM POOL: promote an unassigned sound back to active game variation ──
+                performAssignFromPool(soundId) {
+                    const reserved = this.reservedSounds[soundId];
+                    if (!reserved || !reserved.generatedParams) return;
+
+                    const cat = reserved.backupOf;
+                    if (!cat) return;
+
+                    if (!this.preferences[cat]) this.preferences[cat] = { approved: null, reserved: [], discarded: [] };
+                    if (!this.categoryVariations[cat]) this.categoryVariations[cat] = new Array(5).fill(null);
+
+                    const prefs = this.preferences[cat];
+                    const vars = this.categoryVariations[cat];
+
+                    // Find first empty slot, otherwise use slot 0
+                    let targetSlot = vars.findIndex(v => v === null);
+                    if (targetSlot === -1) targetSlot = 0;
+
+                    // If overwriting an already-assigned slot, displace it to pool first
+                    if (vars[targetSlot] && prefs.approved === targetSlot) {
+                        const num = this.nextUnassignedNum++;
+                        const displaceId = `${cat}_u${num}`;
+                        this.reservedSounds[displaceId] = {
+                            backupOf: cat,
+                            generatedParams: JSON.parse(JSON.stringify(vars[targetSlot])),
+                            empty: false,
+                            label: displaceId,
+                            unassignedNum: num
+                        };
+                        this.unassignedSounds.push(displaceId);
+                    }
+
+                    // Place the pool sound into the slot and mark as approved
+                    vars[targetSlot] = JSON.parse(JSON.stringify(reserved.generatedParams));
+                    prefs.approved = targetSlot;
+
+                    // Remove from pool
+                    delete this.reservedSounds[soundId];
+                    this.unassignedSounds = this.unassignedSounds.filter(s => s !== soundId);
+
+                    this.savePreferences();
+                    this.saveReservedSounds();
+                    this.saveSlotStates();
+                    if (this.currentCategory === cat) this.updatePanel();
+                    if (soundMixer) soundMixer.renderStrips();
+                    this.showToast(`▲ Assigned to ${cat} (Slot ${targetSlot + 1})`);
+                },
+
+                // ── UNDO: reverse the last Keep ──
+                undoLastKeep() {
+                    if (this.undoStack.length === 0) {
+                        this.showToast('Nothing to undo');
+                        return;
+                    }
+                    const last = this.undoStack.pop();
+                    const { cat, keptIndex, prevApprovedIndex, displacedId } = last;
+
+                    const prefs = this.preferences[cat];
+
+                    // The just-kept sound (B) goes to unassigned pool so it isn't lost
+                    const unkeptVar = (this.categoryVariations[cat] || [])[keptIndex];
+                    if (unkeptVar && prefs && prefs.approved === keptIndex) {
+                        const num = this.nextUnassignedNum++;
+                        const unkeptId = `${cat}_u${num}`;
+                        this.reservedSounds[unkeptId] = {
+                            backupOf: cat,
+                            generatedParams: JSON.parse(JSON.stringify(unkeptVar)),
+                            empty: false,
+                            label: unkeptId,
+                            unassignedNum: num
+                        };
+                        this.unassignedSounds.push(unkeptId);
+                    }
+
+                    // Restore previous approved
+                    if (prefs) prefs.approved = (prevApprovedIndex !== undefined && prevApprovedIndex !== null) ? prevApprovedIndex : null;
+
+                    // Remove the displaced-A copy (was added when we kept B); A is assigned again so it's redundant
+                    if (displacedId) {
+                        delete this.reservedSounds[displacedId];
+                        this.unassignedSounds = this.unassignedSounds.filter(s => s !== displacedId);
+                    }
+
+                    this.savePreferences();
+                    this.saveReservedSounds();
+                    if (this.currentCategory === cat) this.updatePanel();
+                    if (soundMixer) soundMixer.renderStrips();
+                    this.showToast('↶ Undone — previous assignment restored, unkept sound sent to pool');
+                },
+
+                // ── PLAY CONFIG: play a sound config object directly (for unassigned pool) ──
+                playVariationConfig(config) {
+                    if (!config) return;
+                    const ctx = getAudioContext();
+                    if (!ctx) return;
+                    try {
+                        if (ctx.state !== 'running') {
+                            ensureAudioContextRunning(ctx);
+                            if (ctx.state === 'suspended') {
+                                setTimeout(() => this.playVariationConfig(config), 100);
+                                return;
+                            }
+                        }
+                        if (config.type === 'explosion')  this.playExplosionVariation(ctx, config);
+                        else if (config.type === 'laser') this.playLaserVariation(ctx, config);
+                        else if (config.type === 'bullet') this.playBulletVariation(ctx, config);
+                        else if (config.type === 'collision') this.playCollisionVariation(ctx, config);
+                        else if (config.type === 'powerup') this.playPowerupVariation(ctx, config);
+                        else if (config.type === 'flame') this.playFlameVariation(ctx, config);
+                        else if (config.type === 'special') this.playSpecialVariation(ctx, config);
+                        else if (config.type === 'asteroid') this.playAsteroidVariation(ctx, config);
+                        else this.playGenericVariation(ctx, config);
+                    } catch (e) { console.error('Error playing config:', e); }
+                },
+
+                // ── DELETE LIBRARY SOUND: removes from pool / marks unassigned slot empty ──
+                deleteLibrarySound(soundName) {
+                    // Check if it's in reservedSounds (a generated / pool sound)
+                    if (this.reservedSounds[soundName]) {
+                        delete this.reservedSounds[soundName];
+                        this.unassignedSounds = this.unassignedSounds.filter(s => s !== soundName);
+                        this.saveReservedSounds();
+                    }
+                    // Check if it's currently the approved variation for some category
+                    for (const cat of Object.keys(this.preferences)) {
+                        const prefs = this.preferences[cat];
+                        if (prefs && prefs.approved !== null) {
+                            const v = (this.categoryVariations[cat] || [])[prefs.approved];
+                            if (v && (v.label === soundName || soundName.startsWith(cat + '_u'))) {
+                                prefs.approved = null;
+                                this.savePreferences();
+                            }
+                        }
+                    }
+                    this.updateLibraryView();
+                    this.showToast('Sound deleted');
                 },
 
                 exportPreferences() {
@@ -33849,6 +34070,11 @@
                             this.toggle();
                         }
                     });
+                    const panel = document.getElementById('soundMixerPanel');
+                    if (panel) panel.style.display = 'none';
+                    const box = document.getElementById('soundMixerToggleBox');
+                    if (box) box.addEventListener('click', () => this.toggle());
+                    this.updateBoxState();
                 },
 
                 applyLoadedGameVolumes() {
@@ -33978,19 +34204,22 @@
                 },
 
                 toggleMinimize() {
-                    this.isMinimized = !this.isMinimized;
-                    const panel = document.getElementById('soundMixerPanel');
-                    const minimizeBtn = document.getElementById('soundMixerMinimizeBtn');
-                    const content = document.getElementById('soundMixerContent');
+                    this.close();
+                },
 
-                    if (!panel) return;
-
-                    if (this.isMinimized) {
-                        if (content) content.style.display = 'none';
-                        if (minimizeBtn) minimizeBtn.textContent = '+';
+                updateBoxState() {
+                    const box = document.getElementById('soundMixerToggleBox');
+                    if (!box) return;
+                    if (this.isOpen) {
+                        box.style.background = 'rgba(60, 60, 80, 0.4)';
+                        box.style.border = '2px solid #555';
+                        box.style.boxShadow = 'none';
+                        box.style.color = '#888';
                     } else {
-                        if (content) content.style.display = 'flex';
-                        if (minimizeBtn) minimizeBtn.textContent = '−';
+                        box.style.background = 'rgba(42, 144, 226, 0.85)';
+                        box.style.border = '2px solid #2a90e2';
+                        box.style.boxShadow = '0 0 14px rgba(42, 144, 226, 0.7)';
+                        box.style.color = '#fff';
                     }
                 },
 
@@ -34019,6 +34248,7 @@
                             }
                         }
                     }
+                    this.updateBoxState();
                 },
 
                 close() {
@@ -34036,6 +34266,7 @@
                             }
                         }
                     }
+                    this.updateBoxState();
                 },
 
                 switchMode(mode) {
@@ -34291,33 +34522,58 @@
                                 font-size: 9px;
                             `;
                             strip.innerHTML = `
-                                <div style="color: #adf; font-weight: bold; margin-bottom: 3px; word-break: break-word; max-height: 30px; overflow-y: auto;">
-                                    ${soundName.substring(0, 35)}
+                                <div style="color: #7af; font-weight: bold; margin-bottom: 2px; word-break: break-word; font-size: 10px;">
+                                    ${soundName.substring(0, 30)}
                                 </div>
-                                <div style="color: #888; font-size: 8px; margin-bottom: 4px;">
-                                    ${reserved.empty ? '(slot empty)' : `Backup of: ${reserved.backupOf}`}
+                                <div style="color: #666; font-size: 8px; margin-bottom: 5px;">
+                                    ${reserved.backupOf || '?'}
                                 </div>
-                                <button class="mixer-unassigned-delete" data-sound="${soundName}" style="
-                                    width: 100%;
-                                    padding: 3px 4px;
-                                    font-size: 9px;
-                                    background: rgba(200, 100, 100, 0.3);
-                                    border: 1px solid #c88;
-                                    color: #fff;
-                                    border-radius: 2px;
-                                    cursor: pointer;
-                                ">🗑 Delete</button>
+                                <div style="display:flex; gap:3px; flex-wrap:wrap;">
+                                    <button class="mixer-unassigned-play" data-sound="${soundName}" style="
+                                        flex:1; padding: 3px 4px; font-size: 9px;
+                                        background: rgba(74,144,226,0.35); border: 1px solid #4a90e2;
+                                        color: #fff; border-radius: 2px; cursor: pointer;">▶</button>
+                                    <button class="mixer-unassigned-assign" data-sound="${soundName}" style="
+                                        flex:1; padding: 3px 4px; font-size: 9px;
+                                        background: rgba(80,180,100,0.35); border: 1px solid #5b8;
+                                        color: #fff; border-radius: 2px; cursor: pointer;">▲ Use</button>
+                                    <button class="mixer-unassigned-delete" data-sound="${soundName}" style="
+                                        flex:1; padding: 3px 4px; font-size: 9px;
+                                        background: rgba(200,100,100,0.3); border: 1px solid #c88;
+                                        color: #fff; border-radius: 2px; cursor: pointer;">🗑</button>
+                                </div>
                             `;
                             section.appendChild(strip);
 
-                            // Bind delete button
+                            // Play
+                            const playBtn = strip.querySelector('.mixer-unassigned-play');
+                            if (playBtn) {
+                                playBtn.onclick = (e) => {
+                                    e.preventDefault();
+                                    const r = soundTestingTool.reservedSounds[soundName];
+                                    if (r && r.generatedParams) soundTestingTool.playVariationConfig(r.generatedParams);
+                                };
+                            }
+
+                            // Assign (make this the active sound for its category)
+                            const assignBtn = strip.querySelector('.mixer-unassigned-assign');
+                            if (assignBtn) {
+                                assignBtn.onclick = (e) => {
+                                    e.preventDefault();
+                                    soundTestingTool.performAssignFromPool(soundName);
+                                    soundTestingTool.updateUnassignedView();
+                                    this.renderStrips();
+                                };
+                            }
+
+                            // Delete
                             const deleteBtn = strip.querySelector('.mixer-unassigned-delete');
                             if (deleteBtn) {
                                 deleteBtn.onclick = (e) => {
                                     e.preventDefault();
-                                    if (confirm(`Delete sound?\n\n${soundName}`)) {
+                                    if (confirm(`Permanently delete unassigned sound?\n\n${soundName}\n\nThis cannot be undone.`)) {
                                         soundTestingTool.deleteSound(soundName);
-                                        soundTestingTool.updateUnassignedView(); // Sync with sound testing tool
+                                        soundTestingTool.updateUnassignedView();
                                         this.renderStrips();
                                         this.showToast(`Deleted "${soundName}"`);
                                     }
