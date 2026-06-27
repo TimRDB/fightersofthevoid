@@ -454,6 +454,12 @@ writeWav('Explosion_Big_a', normalize(declick(explosion(1.3, 1.5, 4)), 0.88));
     const b = tone(0.5, (t) => 320 - t * 220, (t) => attackDecay(0.005, 0.18)(t) * (Math.sin(t * 230) > -0.35 ? 1 : 0.15), 'sq');
     mix(b, fmTone(0.4, 480, 0.5, 1.8, expDecay(0.15)), 0.02, 0.4);
     writeWav('Machine_Laser_a', normalize(declick(b), 0.78)); }
+{   // Boss pattern shot: heavy energy burst, used by all boss types for pattern fire
+    const b = buf(0.42);
+    for (let v = 0; v < 3; v++) mix(b, tone(0.38, (t) => (760 - t * 580) * (1 + (v - 1) * 0.014), attackDecay(0.006, 0.17), 'saw'), 0, 0.38);
+    mix(b, highpass(whiteNoise(0.33, expDecay(0.15)), 2000), 0, 0.28);
+    mix(b, tone(0.35, 100, attackDecay(0.008, 0.14), 'sq'), 0, 0.35);
+    writeWav('Boss_Pattern_Shot_a', normalize(declick(softclip(b, 1.4)), 0.82)); }
 
 // ════════════════════════ BOSS ENGINE LOOPS (seamless) ════════════════════════
 function engineLoop(name, build, sec = 4.5) {
