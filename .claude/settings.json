@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\" status)",
+      "Bash(git -C \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\" diff --stat)",
+      "Bash(git -C \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\" log --oneline -5)"
+    ]
+  }
+}
