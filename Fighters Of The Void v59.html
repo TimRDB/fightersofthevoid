@@ -460,7 +460,7 @@
         z-index: 9999;
         overflow: hidden;
         box-shadow: 0 0 30px rgba(42, 144, 226, 0.4);
-        display: flex;
+        display: none;
         flex-direction: column;
         cursor: move;
         resize: both;
@@ -1067,9 +1067,9 @@
             showPowerupGuide: false,
             showEnemyGuide: false,
             showBossGuide: false,
-            bossGuidePage: 0, // 0 = Mark I Destroyer, 1 = The Knight, 2 = Mark II Destroyer, 3 = The Count, 4 = Mark III Destroyer Prototype, 5 = Machine Of The Void
+            bossGuidePage: 0, // 0 = Mark I Destroyer, 1 = The Knight, 2 = Mark II Destroyer, 3 = The Count, 4 = Mark III Destroyer Prototype, 5 = Machine Of The Void, 6 = The Gatekeeper (secret boss)
             showBossAttacks: false, // Boss attacks page
-            bossAttacksPage: 0, // 0 = Mark I Destroyer attacks, 1 = The Knight attacks, 2 = Mark II Destroyer attacks, 3 = The Count attacks, 4 = Mark III Destroyer attacks, 5 = Machine Of The Void attacks
+            bossAttacksPage: 0, // 0 = Mark I Destroyer attacks, 1 = The Knight attacks, 2 = Mark II Destroyer attacks, 3 = The Count attacks, 4 = Mark III Destroyer attacks, 5 = Machine Of The Void attacks, 6 = The Gatekeeper attacks
             bossAttacksScroll: 0, // Scroll position for boss attacks page
             enemyGuideScroll: 0, // Scroll position for enemy guide page
             difficultyMode: null, // 'easy', 'medium', 'hard', 'empty' - null forces mode selection
@@ -1347,6 +1347,13 @@
             }
         }
 
+        // Per-sound volume multiplier set by the Sound Mixer's game mode (0-1, default 1).
+        // Consumed by all three playback paths so mixer sliders affect real gameplay audio.
+        function getMixerVolumeMultiplier(name) {
+            const m = game.volumeMultipliers && game.volumeMultipliers[name];
+            return (m === undefined || m === null) ? 1 : m;
+        }
+
         // Play a decoded AudioBuffer by name (polyphonic, always fires immediately).
         // Returns true if the buffer was available and started, false otherwise.
         function playSoundBuffer(name, volume, playbackRate) {
@@ -1366,7 +1373,7 @@
                 tone.type = 'lowpass';
                 tone.frequency.setValueAtTime(8200, ctx.currentTime);
                 tone.Q.setValueAtTime(0.45, ctx.currentTime);
-                gain.gain.value = volume != null ? Math.max(0, Math.min(1, volume)) : 1;
+                gain.gain.value = (volume != null ? Math.max(0, Math.min(1, volume)) : 1) * getMixerVolumeMultiplier(name);
                 src.connect(tone);
                 tone.connect(gain);
                 gain.connect(getSfxOutputNode(ctx) || ctx.destination);
@@ -1401,7 +1408,7 @@
                 const el = pool.els[pool.idx];
                 pool.idx = (pool.idx + 1) % pool.els.length;
                 if (!el) return false;
-                el.volume = volume != null ? Math.max(0, Math.min(1, volume)) : 1;
+                el.volume = Math.max(0, Math.min(1, (volume != null ? Math.max(0, Math.min(1, volume)) : 1) * getMixerVolumeMultiplier(name)));
                 if (playbackRate != null) el.playbackRate = playbackRate;
                 try { el.currentTime = 0; } catch (e) {}
                 const p = el.play();
@@ -1419,7 +1426,7 @@
             try {
                 const copy = el.cloneNode();
                 copy.preload = 'auto';
-                copy.volume = volume != null ? Math.max(0, Math.min(1, volume)) : 1;
+                copy.volume = Math.max(0, Math.min(1, (volume != null ? Math.max(0, Math.min(1, volume)) : 1) * getMixerVolumeMultiplier(name)));
                 if (playbackRate != null) copy.playbackRate = playbackRate;
                 if (copy.readyState === 0 && typeof copy.load === 'function') copy.load();
                 copy.play().catch(() => {});
@@ -1439,9 +1446,9 @@
             // not extreme variance.
             let volume = baseVolume;
             if (simultaneousCount > 1) {
-                const maxStagger = simultaneousCount - 1;
                 const marginalReduction = 0.45; // 45% reduction span across all bullets
-                volume = baseVolume * (1 - (simultaneousCount / maxStagger) * marginalReduction * 0.5);
+                const perBulletStep = 0.06; // each extra simultaneous bullet trims a bit more
+                volume = baseVolume * (1 - Math.min(marginalReduction, (simultaneousCount - 1) * perBulletStep));
             }
             volume = Math.max(0, Math.min(1, volume + randomRange(-volumeJitter, volumeJitter)));
             const playbackRate = Math.max(0.1, basePlaybackRate + randomRange(-rateJitter, rateJitter));
@@ -3772,7 +3779,7 @@
                 const arrowHeight = 40;
                 
                 // Right arrow navigation - go to next page if not on last page
-                if (game.bossGuidePage < 5 && 
+                if (game.bossGuidePage < 6 &&
                     mouseX >= rightArrowX && mouseX <= rightArrowX + arrowWidth &&
                     mouseY >= rightArrowY && mouseY <= rightArrowY + arrowHeight) {
                     game.bossGuidePage += 1; // Go to next page
@@ -4348,6 +4355,181 @@
                 ctx.fillRect(17, 2, 10, 16);
                 ctx.fillStyle = '#ffee88';
                 ctx.fillRect(-4, -21, 8, 30);
+            } else if (type === 'defender_stealth_fighter') {
+                // Cloaked: faint angular silhouette with a bright reveal-flash edge
+                ctx.globalAlpha = 0.35;
+                drawDefender(34, 38, '#884411', false);
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(-19, -21, 38, 42);
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#ffcc44';
+                ctx.beginPath();
+                ctx.arc(0, -4, 3, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (type === 'missile_launcher') {
+                ctx.scale(0.85, 0.85);
+                drawHull(56, 24, color, '#992200', '#ffddaa');
+                ctx.fillStyle = '#661100';
+                for (let m = -2; m <= 2; m += 2) {
+                    ctx.fillRect(m * 9 - 3, -19, 6, 8);
+                }
+                ctx.fillStyle = '#ffaa66';
+                for (let m = -2; m <= 2; m += 2) {
+                    ctx.fillRect(m * 9 - 1.5, -23, 3, 4);
+                }
+            } else if (type === 'void_generator') {
+                drawVoidGlow(30);
+                drawDiamond(23, color);
+                ctx.strokeStyle = '#bb77ff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 16, 7, Math.PI / 5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.fillStyle = '#220044';
+                ctx.beginPath();
+                ctx.arc(0, 0, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#dd99ff';
+                ctx.beginPath();
+                ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (type === 'aegis') {
+                drawHull(30, 28, color, '#cc6611', '#ffeecc');
+                ctx.strokeStyle = '#66ccff';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 2, 24, Math.PI * 0.15, Math.PI * 0.85);
+                ctx.stroke();
+            } else if (type === 'minelayer') {
+                drawHull(38, 22, color, '#bb7722', '#ffddaa');
+                ctx.fillStyle = '#ff5533';
+                [-14, 0, 14].forEach(mx => {
+                    ctx.beginPath();
+                    ctx.arc(mx, 20, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            } else if (type === 'breacher') {
+                drawTriangle(26, 38, color);
+                ctx.fillStyle = '#ff2200';
+                ctx.beginPath();
+                ctx.arc(0, -14, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 100, 60, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-8, 24); ctx.lineTo(-8, 32);
+                ctx.moveTo(8, 24); ctx.lineTo(8, 32);
+                ctx.stroke();
+            } else if (type === 'void_phantom') {
+                ctx.globalAlpha = 0.45;
+                drawDiamond(20, color);
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#ee99ff';
+                ctx.beginPath();
+                ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                ctx.fill();
+                drawVoidGlow(25);
+            } else if (type === 'void_leech') {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 14, 20, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ff88cc';
+                ctx.beginPath();
+                ctx.arc(0, 8, 5, 0, Math.PI * 2);
+                ctx.fill();
+                drawVoidGlow(24);
+            } else if (type === 'void_splitter') {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 20, 17, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#dd99ff';
+                ctx.beginPath();
+                ctx.arc(-7, 0, 4, 0, Math.PI * 2);
+                ctx.arc(8, 2, 4, 0, Math.PI * 2);
+                ctx.fill();
+                drawVoidGlow(24);
+            } else if (type === 'defender_railgunner') {
+                drawDefender(30, 34, '#ffaa66', false);
+                ctx.fillStyle = '#441111';
+                ctx.fillRect(-3, -32, 6, 18);
+                ctx.strokeStyle = 'rgba(255, 80, 80, 0.7)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([3, 5]);
+                ctx.beginPath();
+                ctx.moveTo(0, -34); ctx.lineTo(0, -46);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else if (type === 'defender_ace') {
+                drawDefender(26, 40, '#ffdd66', false);
+                ctx.strokeStyle = 'rgba(255, 160, 80, 0.7)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-20, 12); ctx.lineTo(-30, 16);
+                ctx.moveTo(20, 12); ctx.lineTo(30, 16);
+                ctx.stroke();
+            } else if (type === 'defender_bomber') {
+                drawDefender(44, 36, '#ffbb66', true);
+                ctx.fillStyle = '#552211';
+                ctx.beginPath();
+                ctx.arc(-12, 20, 4, 0, Math.PI * 2);
+                ctx.arc(12, 20, 4, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (type === 'void_rift') {
+                drawVoidGlow(30);
+                ctx.strokeStyle = 'rgba(153, 51, 255, 0.4)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 6]);
+                ctx.beginPath();
+                ctx.arc(0, 0, 26, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#110022';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 8, 18, 0.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 8, 18, 0.5, 0, Math.PI * 2);
+                ctx.stroke();
+            } else if (type === 'void_conduit') {
+                ctx.strokeStyle = 'rgba(136, 34, 238, 0.7)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-14, 0); ctx.lineTo(14, 0);
+                ctx.stroke();
+                drawDiamond(10, color);
+                ctx.save();
+                ctx.translate(-18, 0);
+                drawDiamond(9, color);
+                ctx.restore();
+                ctx.save();
+                ctx.translate(18, 0);
+                drawDiamond(9, color);
+                ctx.restore();
+                drawVoidGlow(27);
+            } else if (type === 'void_echo') {
+                // Ghostly copy of the player ship
+                ctx.globalAlpha = 0.7;
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.moveTo(0, -16);
+                ctx.lineTo(-12, 12);
+                ctx.lineTo(-5, 7);
+                ctx.lineTo(0, 12);
+                ctx.lineTo(5, 7);
+                ctx.lineTo(12, 12);
+                ctx.closePath();
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#bb99ff';
+                ctx.fillRect(-2, -6, 4, 8);
+                drawVoidGlow(22);
             } else {
                 drawHull(30, 30, color, '#777777', '#ffffff');
             }
@@ -4390,7 +4572,8 @@
             
             if (game.showEnemyGuide) {
                 const scrollSpeed = 42;
-                const guideEntryCount = game.enemyTypes ? Object.keys(game.enemyTypes).length : 28;
+                // Use the count recorded by the guide draw code so maxScroll matches exactly
+                const guideEntryCount = game._enemyGuideCount || 42;
                 const guideLayout = getEnemyGuideLayout(guideEntryCount);
                 game.enemyGuideScroll += e.deltaY > 0 ? scrollSpeed : -scrollSpeed;
                 game.enemyGuideScroll = Math.max(0, Math.min(guideLayout.maxScroll, game.enemyGuideScroll));
@@ -4450,6 +4633,8 @@
                     regenRate = 30; // 2 HP/sec for medium (60fps)
                 } else if (game.difficultyMode === 'hard') {
                     regenRate = 60; // 1 HP/sec for hard (60fps)
+                } else {
+                    regenRate = 20; // sandbox/empty mode: fastest regen for convenient testing
                 }
                 
                 game.healthRegenTimer += frameScale; // Frame rate independent timer
@@ -4569,7 +4754,7 @@
             // Find closest enemies for each tracking gun
             const targets = [];
             const enemyList = [...game.enemies];
-            if (game.boss && !game.boss.exploding) {
+            if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                 enemyList.push(game.boss);
             }
             // Also consider asteroids as tracking targets
@@ -6764,6 +6949,11 @@
                 if (enemy.type === 'void_generator') {
                     enemy.vgSpinAngle = (enemy.vgSpinAngle || 0) + 0.012 * enemyFrameScale;
                     const now = Date.now();
+                    // Lazy init so sandbox-spawned generators (which skip spawnEnemy) still drop portals
+                    if (enemy.vgPortalTimer === undefined) {
+                        enemy.vgPortalTimer = now - 4000;
+                        enemy.vgPortalInterval = 7000 + Math.random() * 5000;
+                    }
                     if (now - enemy.vgPortalTimer > enemy.vgPortalInterval && enemy.y > 0 && enemy.y < canvas.height) {
                         createGeneratorPortal(enemy.x, enemy.y);
                         enemy.vgPortalTimer = now;
@@ -6774,53 +6964,84 @@
                 // ─── v59.4 CANDIDATE ENEMY BEHAVIOURS (sandbox testing) ─────────────
                 if (enemy.type === 'aegis') {
                     // Directional shield: cycles up (blocks frontal player fire) and vented (vulnerable)
-                    if (enemy.shieldUp === undefined) { enemy.shieldUp = true; enemy.shieldCycleTimer = 180; }
+                    if (enemy.shieldUp === undefined) { enemy.shieldUp = true; enemy.shieldCycleTimer = 180; enemy.aegisBlocked = 0; }
                     enemy.shieldCycleTimer -= enemyFrameScale;
                     if (enemy.shieldCycleTimer <= 0) {
                         enemy.shieldUp = !enemy.shieldUp;
                         enemy.shieldCycleTimer = enemy.shieldUp ? 180 : 90; // 3s up, 1.5s vented
+                        enemy.aegisBlocked = 0;
                     }
-                    // Gentle horizontal wander
+                    // Shield break: soaking 10 hits while shielded staggers it into an early,
+                    // longer vent — rewards focused fire instead of only waiting out the cycle
+                    // (10 ≈ every base-power shot landing for a full cycle, or ~1s of spread fire)
+                    if (enemy.shieldUp && (enemy.aegisBlocked || 0) >= 10) {
+                        enemy.shieldUp = false;
+                        enemy.shieldCycleTimer = 120; // 2s stagger vent (longer than normal)
+                        enemy.aegisBlocked = 0;
+                        enemy.aegisStagger = 20;
+                        if (game.particles.length < 350) {
+                            for (let sp = 0; sp < 10; sp++) {
+                                const spa = Math.PI * (0.15 + Math.random() * 0.7);
+                                game.particles.push({ x: enemy.x + Math.cos(spa) * 24, y: enemy.y + Math.sin(spa) * 24, speedX: Math.cos(spa) * 2.2, speedY: Math.sin(spa) * 2.2, life: 20, maxLife: 20, color: '#ffdd88', size: 2.5 });
+                            }
+                        }
+                    }
+                    // Gentle horizontal wander — wider while shielded, stalls descent while vented
                     enemy.aegisDrift = (enemy.aegisDrift || 0) + 0.013 * enemyFrameScale;
-                    enemy.x += Math.sin(enemy.aegisDrift) * 0.5 * enemyFrameScale;
+                    enemy.x += Math.sin(enemy.aegisDrift) * (enemy.shieldUp ? 0.8 : 0.3) * enemyFrameScale;
+                    if (!enemy.shieldUp) enemy.y -= enemy.speed * 0.7 * enemyFrameScale; // near-stall: vulnerable window stays on screen
                 } else if (enemy.type === 'minelayer') {
-                    // Descend to a traversal band, then sweep horizontally laying mines
-                    if (enemy.mlDir === undefined) { enemy.mlDir = Math.random() < 0.5 ? -1 : 1; enemy.mlBandY = 110 + Math.random() * 80; }
-                    if (enemy.y < enemy.mlBandY) {
+                    // Descend to a traversal band, sweep horizontally laying mines,
+                    // then depart once its payload (9 mines) is spent
+                    if (enemy.mlDir === undefined) { enemy.mlDir = Math.random() < 0.5 ? -1 : 1; enemy.mlBandY = 110 + Math.random() * 80; enemy.mlMines = 0; }
+                    if (enemy.mlLeaving) {
+                        // Payload spent: throttle up and dive off-screen
+                        enemy.x += enemy.mlDir * 2.4 * enemyFrameScale;
+                        enemy.y += 2.0 * enemyFrameScale;
+                    } else if (enemy.y < enemy.mlBandY) {
                         enemy.y += 1.4 * enemyFrameScale;
                     } else {
                         enemy.x += enemy.mlDir * 1.1 * enemyFrameScale;
+                        enemy.y = enemy.mlBandY + Math.sin(enemy.x * 0.045) * 5; // gentle bob along the sweep
+                        enemy.mlBandTime = (enemy.mlBandTime || 0) + enemyFrameScale;
                         if (enemy.x < enemy.width / 2 + 6) { enemy.x = enemy.width / 2 + 6; enemy.mlDir = 1; }
                         if (enemy.x > canvas.width - enemy.width / 2 - 6) { enemy.x = canvas.width - enemy.width / 2 - 6; enemy.mlDir = -1; }
+                        // Depart when the payload is spent OR after ~25s on station
+                        if (enemy.mlMines >= 9 || enemy.mlBandTime > 1500) enemy.mlLeaving = true;
                     }
                 } else if (enemy.type === 'breacher') {
                     // Telegraphed ram dash: cruise → windup (locked aim, shaking) → dash → recover
-                    if (enemy.brPhase === undefined) { enemy.brPhase = 'cruise'; enemy.brTimer = 120 + Math.random() * 120; }
+                    if (enemy.brPhase === undefined) { enemy.brPhase = 'cruise'; enemy.brTimer = 120 + Math.random() * 120; enemy.brDashCount = 0; }
                     enemy.brTimer -= enemyFrameScale;
+                    const brEnraged = enemy.health < (enemy.maxHealth || 55) * 0.5; // damaged = shorter telegraph, still dodgeable
                     if (enemy.brPhase === 'cruise') {
-                        enemy.y += 1.2 * enemyFrameScale;
+                        // After 3 dashes it disengages and dives away instead of looping forever
+                        enemy.y += (enemy.brDashCount >= 3 ? 2.6 : 1.2) * enemyFrameScale;
                         enemy.x += Math.sin(enemy.brTimer * 0.05) * 0.6 * enemyFrameScale;
-                        if (enemy.brTimer <= 0 && enemy.y > 40 && enemy.y < canvas.height * 0.55) {
+                        if (enemy.brDashCount < 3 && enemy.brTimer <= 0 && enemy.y > 40 && enemy.y < canvas.height * 0.55) {
                             enemy.brPhase = 'windup';
-                            enemy.brTimer = 36; // 0.6s telegraph — aim locks NOW, so the dash is dodgeable
+                            enemy.brTimer = brEnraged ? 28 : 36; // telegraph — aim locks NOW, so the dash is dodgeable
                             const bdx = game.player.x - enemy.x, bdy = game.player.y - enemy.y;
                             const bd = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
                             enemy.brDashX = (bdx / bd) * 9;
                             enemy.brDashY = (bdy / bd) * 9;
+                            // Dash just long enough to reach the locked point plus a short overshoot,
+                            // so it stops near the player's old position instead of flying off-screen
+                            enemy.brDashLen = Math.max(18, Math.min(46, bd / 9 + 6));
                         }
                     } else if (enemy.brPhase === 'windup') {
                         enemy.x += (Math.random() - 0.5) * 1.6; // shake
-                        if (enemy.brTimer <= 0) { enemy.brPhase = 'dash'; enemy.brTimer = 42; }
+                        if (enemy.brTimer <= 0) { enemy.brPhase = 'dash'; enemy.brTimer = enemy.brDashLen || 42; }
                     } else if (enemy.brPhase === 'dash') {
                         enemy.x += enemy.brDashX * enemyFrameScale;
                         enemy.y += enemy.brDashY * enemyFrameScale;
                         if (game.particles.length < 350) {
                             game.particles.push({ x: enemy.x - enemy.brDashX, y: enemy.y - enemy.brDashY, speedX: (Math.random() - 0.5) * 1.5, speedY: (Math.random() - 0.5) * 1.5, life: 14, maxLife: 14, color: '#ffaa55', size: 2.5 });
                         }
-                        if (enemy.brTimer <= 0) { enemy.brPhase = 'recover'; enemy.brTimer = 70; }
-                    } else { // recover
-                        enemy.y += 0.5 * enemyFrameScale;
-                        if (enemy.brTimer <= 0) { enemy.brPhase = 'cruise'; enemy.brTimer = 150 + Math.random() * 90; }
+                        if (enemy.brTimer <= 0) { enemy.brPhase = 'recover'; enemy.brTimer = 70; enemy.brDashCount++; }
+                    } else { // recover — climb back to the engagement band if the dash carried it low
+                        enemy.y += (enemy.y > canvas.height * 0.62 ? -0.9 : 0.5) * enemyFrameScale;
+                        if (enemy.brTimer <= 0) { enemy.brPhase = 'cruise'; enemy.brTimer = (brEnraged ? 100 : 150) + Math.random() * 90; }
                     }
                     enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
                 } else if (enemy.type === 'void_phantom') {
@@ -6838,72 +7059,145 @@
                         enemy.phAlpha = 0.15;
                         const phDx = game.player.x - enemy.x;
                         enemy.x += Math.sign(phDx) * Math.min(Math.abs(phDx), 1.8) * enemyFrameScale;
-                    if (enemy.phTimer <= 0) { enemy.phPhase = 'fadein'; enemy.phTimer = 24; }
+                        enemy.y -= enemy.speed * 0.55 * enemyFrameScale; // ghosts drift, they don't dive — stays in play longer
+                        if (enemy.phTimer <= 0) { enemy.phPhase = 'fadein'; enemy.phTimer = 24; }
                     } else { // fadein
                         enemy.phAlpha = Math.min(1, (1 - enemy.phTimer / 24) + 0.15);
                         if (enemy.phTimer <= 0) {
                             enemy.phPhase = 'visible'; enemy.phTimer = 130; enemy.phased = false;
-                            // Materialise volley: 3-bullet aimed fan
+                            // Materialise volley: 3-bullet aimed fan (suppressed at point-blank
+                            // range so a phantom re-forming on top of you isn't a free hit)
                             const mvDx = game.player.x - enemy.x, mvDy = game.player.y - enemy.y;
-                            const mvBase = Math.atan2(mvDy, mvDx);
-                            for (let f = -1; f <= 1; f++) {
-                                const a = mvBase + f * 0.22;
-                                game.enemyBullets.push({ x: enemy.x, y: enemy.y, width: 7, height: 7, speedX: Math.cos(a) * 3.6, speedY: Math.sin(a) * 3.6, damage: 42, isVoidBullet: true });
+                            const mvDist = Math.sqrt(mvDx * mvDx + mvDy * mvDy);
+                            if (mvDist > 60) {
+                                const mvBase = Math.atan2(mvDy, mvDx);
+                                for (let f = -1; f <= 1; f++) {
+                                    const a = mvBase + f * 0.22;
+                                    game.enemyBullets.push({ x: enemy.x, y: enemy.y, width: 7, height: 7, speedX: Math.cos(a) * 3.6, speedY: Math.sin(a) * 3.6, damage: 42, isVoidBullet: true });
+                                }
+                            }
+                            // Materialise flash
+                            if (game.particles.length < 350) {
+                                for (let mp = 0; mp < 6; mp++) {
+                                    const mpa = (mp / 6) * Math.PI * 2;
+                                    game.particles.push({ x: enemy.x, y: enemy.y, speedX: Math.cos(mpa) * 2.4, speedY: Math.sin(mpa) * 2.4, life: 16, maxLife: 16, color: '#cc99ff', size: 2 });
+                                }
                             }
                         }
                     }
+                } else if (enemy.type === 'void_leech') {
+                    // Skittish parasite: settles into the upper band and keeps lateral
+                    // distance from the player — it wants to snipe with orbs, not brawl
+                    if (enemy.y > 170) enemy.y -= enemy.speed * 0.85 * enemyFrameScale; // near-stall once in band
+                    enemy.lcDrift = (enemy.lcDrift || Math.random() * Math.PI * 2) + 0.02 * enemyFrameScale;
+                    const lcDx = game.player.x - enemy.x;
+                    if (Math.abs(lcDx) < 140) {
+                        enemy.x -= Math.sign(lcDx) * 0.7 * enemyFrameScale; // shy away from your column
+                    } else {
+                        enemy.x += Math.sin(enemy.lcDrift) * 0.6 * enemyFrameScale;
+                    }
+                    enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
+                } else if (enemy.type === 'void_splitter') {
+                    // Heavy wobbling blob — the sway telegraphs the unstable mass inside
+                    enemy.spWobble = (enemy.spWobble || Math.random() * Math.PI * 2) + 0.035 * enemyFrameScale;
+                    enemy.x += Math.sin(enemy.spWobble) * 0.9 * enemyFrameScale;
+                    enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
                 } else if (enemy.type === 'void_splitterling') {
-                    // Sideways scatter from birth impulse, then weaving descent
+                    // Sideways scatter + upward pop from the split, then weaving descent
+                    // with a slight hunger for the player's column
                     if (enemy.slDriftX) {
                         enemy.x += enemy.slDriftX * enemyFrameScale;
                         enemy.slDriftX *= Math.pow(0.96, enemyFrameScale);
                     }
+                    if (enemy.slDriftY) {
+                        enemy.y += enemy.slDriftY * enemyFrameScale;
+                        enemy.slDriftY *= Math.pow(0.94, enemyFrameScale);
+                    }
                     enemy.x += Math.sin((game.gameTime || 0) * 0.01 + enemy.y * 0.03) * 1.1 * enemyFrameScale;
+                    enemy.x += Math.sign(game.player.x - enemy.x) * 0.35 * enemyFrameScale;
                     enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
                 } else if (enemy.type === 'defender_railgunner') {
-                    // Align to the player's column → lock + warning line → vertical railgun
-                    if (enemy.rgPhase === undefined) { enemy.rgPhase = 'align'; enemy.rgTimer = 120; }
-                    if (enemy.y < 90) enemy.y += 1.2 * enemyFrameScale; // settle into the top band
+                    // Align to the player's column → lock (held aim, muzzle flicker) →
+                    // warning line + vertical railgun; departs after 4 shots
+                    if (enemy.rgPhase === undefined) { enemy.rgPhase = 'align'; enemy.rgTimer = 110; enemy.rgShots = 0; }
+                    if (enemy.rgPhase !== 'depart' && enemy.y < 90) enemy.y += 1.2 * enemyFrameScale; // settle into the top band
                     enemy.rgTimer -= enemyFrameScale;
                     if (enemy.rgPhase === 'align') {
                         const rgDx = game.player.x - enemy.x;
                         enemy.x += Math.sign(rgDx) * Math.min(Math.abs(rgDx), 2.4) * enemyFrameScale;
+                        if (enemy.rgTimer <= 0) { enemy.rgPhase = 'lock'; enemy.rgTimer = 30; }
+                    } else if (enemy.rgPhase === 'lock') {
+                        // Held aim: the lane is committed before the warning even appears,
+                        // so a moving player always has the answer
                         if (enemy.rgTimer <= 0) {
                             enemy.rgPhase = 'fire';
                             enemy.rgTimer = 60;
+                            enemy.rgShots++;
                             // Reuses the Mark III laser system: dashed warning, then beam
                             fireLaserBeam(enemy.x, enemy.y + enemy.height / 2, Math.PI / 2);
                         }
-                    } else { // fire/cooldown — hold still so the beam stays honest
-                        if (enemy.rgTimer <= 0) { enemy.rgPhase = 'align'; enemy.rgTimer = 130 + Math.random() * 60; }
+                    } else if (enemy.rgPhase === 'fire') { // hold still so the beam stays honest
+                        if (enemy.rgTimer <= 0) {
+                            if (enemy.rgShots >= 4) { enemy.rgPhase = 'depart'; }
+                            else { enemy.rgPhase = 'align'; enemy.rgTimer = 130 + Math.random() * 60; }
+                        }
+                    } else { // depart — rails spent, throttle out of the fight
+                        enemy.y += 2.4 * enemyFrameScale;
                     }
                 } else if (enemy.type === 'defender_ace') {
-                    // Sidesteps incoming player bullets (cooldown-limited afterburner dodge)
-                    if (enemy.aceDodgeCd === undefined) { enemy.aceDodgeCd = 0; enemy.aceDodgeLeft = 0; enemy.aceDodgeDir = 1; }
+                    // Sidesteps incoming player bullets (cooldown-limited afterburner dodge);
+                    // patrols with a weave and holds the engagement band before flying through
+                    if (enemy.aceDodgeCd === undefined) { enemy.aceDodgeCd = 0; enemy.aceDodgeLeft = 0; enemy.aceDodgeDir = 1; enemy.aceWeave = Math.random() * Math.PI * 2; enemy.aceHold = 0; }
                     if (enemy.aceDodgeCd > 0) enemy.aceDodgeCd -= enemyFrameScale;
+                    if (enemy.y > 120 && enemy.aceHold < 480) {
+                        enemy.aceHold += enemyFrameScale;
+                        enemy.y -= enemy.speed * 0.8 * enemyFrameScale; // loiter ~8s in the band, then resume the pass
+                    }
                     if (enemy.aceDodgeLeft > 0) {
                         enemy.x += enemy.aceDodgeDir * 8 * enemyFrameScale;
                         enemy.aceDodgeLeft -= enemyFrameScale;
                         if (game.particles.length < 350) {
                             game.particles.push({ x: enemy.x - enemy.aceDodgeDir * 10, y: enemy.y, speedX: 0, speedY: 0.4, life: 10, maxLife: 10, color: '#ff6644', size: 2 });
                         }
-                    } else if (enemy.aceDodgeCd <= 0 && enemy.y > 0) {
-                        for (let abi = 0; abi < game.bullets.length; abi++) {
-                            const ab = game.bullets[abi];
-                            if (ab.y > enemy.y && ab.y - enemy.y < 150 && Math.abs(ab.x - enemy.x) < 26 && ab.speedY < 0) {
-                                enemy.aceDodgeDir = Math.abs(ab.x - enemy.x) > 6
-                                    ? (ab.x > enemy.x ? -1 : 1)
-                                    : (enemy.x < canvas.width / 2 ? 1 : -1);
-                                enemy.aceDodgeLeft = 8;
-                                enemy.aceDodgeCd = 55;
-                                break;
+                    } else {
+                        enemy.aceWeave += 0.024 * enemyFrameScale;
+                        enemy.x += Math.sin(enemy.aceWeave) * 1.1 * enemyFrameScale;
+                        if (enemy.aceDodgeCd <= 0 && enemy.y > 0) {
+                            for (let abi = 0; abi < game.bullets.length; abi++) {
+                                const ab = game.bullets[abi];
+                                if (ab.y > enemy.y && ab.y - enemy.y < 150 && Math.abs(ab.x - enemy.x) < 26 && ab.speedY < 0) {
+                                    enemy.aceDodgeDir = Math.abs(ab.x - enemy.x) > 6
+                                        ? (ab.x > enemy.x ? -1 : 1)
+                                        : (enemy.x < canvas.width / 2 ? 1 : -1);
+                                    // Never afterburner into a wall — flip if the sidestep would pin it
+                                    if (enemy.x + enemy.aceDodgeDir * 70 < 40 || enemy.x + enemy.aceDodgeDir * 70 > canvas.width - 40) {
+                                        enemy.aceDodgeDir *= -1;
+                                    }
+                                    enemy.aceDodgeLeft = 8;
+                                    enemy.aceDodgeCd = 55;
+                                    break;
+                                }
                             }
                         }
                     }
                     enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
+                } else if (enemy.type === 'defender_bomber') {
+                    // Bombing run: lumbers down to altitude, holds the line strafing
+                    // slowly (~10s of flak), then continues through and departs
+                    if (enemy.bmbPhase === undefined) { enemy.bmbPhase = Math.random() * Math.PI * 2; enemy.bmbRun = 0; }
+                    enemy.bmbPhase += 0.012 * enemyFrameScale;
+                    if (enemy.y > 130 && enemy.bmbRun < 600) {
+                        enemy.bmbRun += enemyFrameScale;
+                        enemy.y -= enemy.speed * 0.85 * enemyFrameScale; // hold altitude during the run
+                        enemy.x += Math.sin(enemy.bmbPhase) * 0.8 * enemyFrameScale;
+                        enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
+                    }
                 } else if (enemy.type === 'void_rift') {
                     // Gravity well: gently pulls the player within 260px while emitting rings
                     enemy.riftSpin = (enemy.riftSpin || 0) + 0.05 * enemyFrameScale;
+                    // A tear in space doesn't fall — it anchors mid-field with a slow orbit wobble
+                    if (enemy.y > 190) enemy.y -= enemy.speed * enemyFrameScale;
+                    enemy.x += Math.sin(enemy.riftSpin * 0.35) * 0.3 * enemyFrameScale;
                     if (!game.playerExploding) {
                         const rfDx = enemy.x - game.player.x, rfDy = enemy.y - game.player.y;
                         const rfD = Math.sqrt(rfDx * rfDx + rfDy * rfDy);
@@ -6918,10 +7212,21 @@
                 } else if (enemy.type === 'void_conduit') {
                     // Paired conduits sweep in opposite phase; the damaging beam runs between
                     // them and is evaluated on the primary node only
-                    if (enemy.cdPhase === undefined) { enemy.cdPhase = Math.random() * Math.PI * 2; }
+                    if (enemy.cdPhase === undefined) { enemy.cdPhase = Math.random() * Math.PI * 2; enemy.cdLife = 0; }
                     enemy.cdPhase += 0.016 * enemyFrameScale;
-                    enemy.y += 0.4 * enemyFrameScale;
-                    enemy.x += Math.sin(enemy.cdPhase) * (enemy.cdPrimary ? 1.3 : -1.3) * enemyFrameScale;
+                    enemy.cdLife += enemyFrameScale;
+                    // Hold the mid-band for ~15s of beam pressure, then resume descent and leave
+                    if (enemy.y < 210 || enemy.cdLife > 900) enemy.y += (enemy.cdEnraged ? 0.55 : 0.4) * enemyFrameScale;
+                    const cdAmp = enemy.cdEnraged ? 2.1 : 1.3; // an angry survivor strafes hard
+                    enemy.x += Math.sin(enemy.cdPhase) * (enemy.cdPrimary ? cdAmp : -cdAmp) * enemyFrameScale;
+                    // Keep the pair at a readable beam length — drift back together when
+                    // the sweep pulls them too far apart, breathe apart when too close
+                    if (enemy.cdPrimary && enemy.cdPartner && game.enemies.includes(enemy.cdPartner)) {
+                        const cpDx = enemy.cdPartner.x - enemy.x;
+                        const cpDist = Math.abs(cpDx);
+                        if (cpDist > 430) { enemy.x += Math.sign(cpDx) * 0.5 * enemyFrameScale; enemy.cdPartner.x -= Math.sign(cpDx) * 0.5 * enemyFrameScale; }
+                        else if (cpDist < 130) { enemy.x -= Math.sign(cpDx) * 0.5 * enemyFrameScale; enemy.cdPartner.x += Math.sign(cpDx) * 0.5 * enemyFrameScale; }
+                    }
                     enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
                     if (enemy.cdPrimary && enemy.cdPartner && game.enemies.includes(enemy.cdPartner) && !game.invincible && !game.playerExploding) {
                         if ((game.player.conduitHitCd || 0) > 0) {
@@ -6954,21 +7259,36 @@
                     }
                 } else if (enemy.type === 'void_echo') {
                     // Mirrors the player's x position from ~1s ago, hovering in the top band;
-                    // drops a void bullet whenever the player fires (rate-limited)
-                    if (!enemy.echoHist) { enemy.echoHist = []; enemy.echoLastPlayerShot = game.player.lastShot; enemy.echoFireCd = 0; }
+                    // drops a void bullet whenever the player fires (rate-limited). Echoing
+                    // too many shots too fast OVERHEATS it — it destabilises and goes quiet,
+                    // so heavy sustained fire earns a free punish window
+                    if (!enemy.echoHist) { enemy.echoHist = []; enemy.echoLastPlayerShot = game.player.lastShot; enemy.echoFireCd = 0; enemy.echoHeat = 0; enemy.echoStun = 0; enemy.echoJitter = 120; }
                     enemy.echoHist.push(game.player.x);
                     if (enemy.echoHist.length > 60) enemy.echoHist.shift();
-                    const echoTargetX = enemy.echoHist[0];
-                    const exDx = echoTargetX - enemy.x;
-                    enemy.x += Math.sign(exDx) * Math.min(Math.abs(exDx), 4.2) * enemyFrameScale;
+                    if (enemy.echoHeat > 0) enemy.echoHeat -= 0.35 * enemyFrameScale;
+                    if (enemy.echoStun > 0) {
+                        // Destabilised: mirroring lags out, drifts with static twitches
+                        enemy.echoStun -= enemyFrameScale;
+                        enemy.x += (Math.random() - 0.5) * 1.4;
+                    } else {
+                        const echoTargetX = enemy.echoHist[0];
+                        const exDx = echoTargetX - enemy.x;
+                        enemy.x += Math.sign(exDx) * Math.min(Math.abs(exDx), 4.2) * enemyFrameScale;
+                        // Periodic glitch pop — a small teleport stutter that sells the copy
+                        enemy.echoJitter -= enemyFrameScale;
+                        if (enemy.echoJitter <= 0) { enemy.echoJitter = 130 + Math.random() * 90; enemy.x += (Math.random() < 0.5 ? -1 : 1) * 7; }
+                    }
                     const echoBandY = 110 + Math.sin((game.gameTime || 0) * 0.0012) * 28;
                     enemy.y += (echoBandY - enemy.y) * 0.04 * enemyFrameScale;
+                    enemy.x = Math.max(enemy.width / 2, Math.min(canvas.width - enemy.width / 2, enemy.x));
                     if (enemy.echoFireCd > 0) enemy.echoFireCd -= enemyFrameScale;
                     if (game.player.lastShot !== enemy.echoLastPlayerShot) {
                         enemy.echoLastPlayerShot = game.player.lastShot;
-                        if (enemy.echoFireCd <= 0) {
+                        if (enemy.echoFireCd <= 0 && enemy.echoStun <= 0) {
                             enemy.echoFireCd = 27; // ~2.2 echoed shots/sec max
                             game.enemyBullets.push({ x: enemy.x, y: enemy.y + enemy.height / 2, width: 7, height: 7, speedX: 0, speedY: 4.2, damage: 38, isVoidBullet: true });
+                            enemy.echoHeat += 16;
+                            if (enemy.echoHeat > 88) { enemy.echoHeat = 0; enemy.echoStun = 90; } // ~6 rapid echoes → 1.5s destabilise
                         }
                     }
                 }
@@ -7064,25 +7384,35 @@
                 case 'aegis_volley': {
                     // Only fires while the shield is up; vented = reloading + vulnerable
                     if (!enemy.shieldUp) return true;
+                    // Slightly converging pair — crosses just below, punishing hugging its column
                     for (let i = -1; i <= 1; i += 2) {
                         game.enemyBullets.push({
                             x: enemy.x + i * 10, y: enemy.y + enemy.height / 2,
-                            width: 6, height: 6, speedX: 0, speedY: 3.4, damage: 35
+                            width: 6, height: 6, speedX: -i * 0.3, speedY: 3.4, damage: 35
                         });
                     }
                     return true;
                 }
                 case 'lay_mine': {
-                    // Only lays while traversing its band; mines arm after 0.5s
-                    if (enemy.mlBandY === undefined || enemy.y < enemy.mlBandY) return true;
+                    // Only lays while traversing its band; mines arm after 0.5s.
+                    // Carries a payload of 9 — the counter drives its departure.
+                    // (-6 tolerance: the sweep bob swings y slightly above the band line)
+                    if (enemy.mlBandY === undefined || enemy.y < enemy.mlBandY - 6 || enemy.mlLeaving) return true;
+                    enemy.mlMines = (enemy.mlMines || 0) + 1;
                     game.enemyBullets.push({
                         x: enemy.x, y: enemy.y + enemy.height / 2 + 6,
-                        width: 11, height: 11, speedX: 0, speedY: 0.3,
+                        width: 11, height: 11, speedX: 0, speedY: 0.9,
                         damage: 25, isProxMine: true, mineAge: 0
                     });
                     return true;
                 }
                 case 'leech_orb': {
+                    // At most 2 live orbs per leech — pressure without orb spam stacking
+                    let liveOrbs = 0;
+                    for (let lb = 0; lb < game.enemyBullets.length; lb++) {
+                        if (game.enemyBullets[lb].isLeechOrb && game.enemyBullets[lb].leechOwner === enemy) liveOrbs++;
+                    }
+                    if (liveOrbs >= 2) return true;
                     const dx = game.player.x - enemy.x, dy = game.player.y - enemy.y;
                     const d = Math.sqrt(dx * dx + dy * dy) || 1;
                     game.enemyBullets.push({
@@ -7106,10 +7436,14 @@
                     return true;
                 }
                 case 'rift_ring': {
-                    // Slow rotating ring of void bullets
+                    // Slow rotating ring of void bullets — alternates 4- and 5-point rings
+                    // so the safe lanes never sit still; the core flares as it emits
                     enemy.riftRingOffset = (enemy.riftRingOffset || 0) + 0.45;
-                    for (let i = 0; i < 4; i++) {
-                        const a = (i / 4) * Math.PI * 2 + enemy.riftRingOffset;
+                    enemy.riftPulse = 14;
+                    const ringN = enemy.riftRingAlt ? 5 : 4;
+                    enemy.riftRingAlt = !enemy.riftRingAlt;
+                    for (let i = 0; i < ringN; i++) {
+                        const a = (i / ringN) * Math.PI * 2 + enemy.riftRingOffset;
                         game.enemyBullets.push({
                             x: enemy.x, y: enemy.y, width: 8, height: 8,
                             speedX: Math.cos(a) * 1.7, speedY: Math.sin(a) * 1.7,
@@ -7119,11 +7453,12 @@
                     return true;
                 }
                 case 'ace_burst': {
-                    // Tight 2-shot aimed burst
+                    // Tight aimed burst — a wounded ace squeezes off a third desperation shot
                     const dx = game.player.x - enemy.x, dy = game.player.y - enemy.y;
                     const base = Math.atan2(dy, dx);
-                    for (let i = 0; i < 2; i++) {
-                        const a = base + (i - 0.5) * 0.07;
+                    const shots = enemy.health < (enemy.maxHealth || 60) * 0.5 ? 3 : 2;
+                    for (let i = 0; i < shots; i++) {
+                        const a = base + (i - (shots - 1) / 2) * 0.07;
                         game.enemyBullets.push({
                             x: enemy.x, y: enemy.y + enemy.height / 2,
                             width: 5, height: 5,
@@ -8141,6 +8476,13 @@
             switch (enemy.type) {
                 case 'aegis': {
                     // Orange hex hull; frontal arc shield faces the player below
+                    if (enemy.aegisStagger > 0) {
+                        // Shield-break stagger: white-hot flash ring
+                        enemy.aegisStagger -= game.frameScale || 1;
+                        ctx.strokeStyle = `rgba(255, 240, 180, ${(enemy.aegisStagger / 20) * 0.8})`;
+                        ctx.lineWidth = 3;
+                        ctx.beginPath(); ctx.arc(ex, ey, 26 + (20 - enemy.aegisStagger) * 1.5, 0, Math.PI * 2); ctx.stroke();
+                    }
                     ctx.fillStyle = '#cc7722';
                     ctx.beginPath();
                     for (let i = 0; i < 6; i++) {
@@ -8296,7 +8638,7 @@
                     ctx.fillStyle = '#aa8888';
                     ctx.fillRect(ex - 8, ey + 10, 4, 12);
                     ctx.fillRect(ex + 4, ey + 10, 4, 12);
-                    const charging = enemy.rgPhase === 'align' && enemy.rgTimer < 30;
+                    const charging = enemy.rgPhase === 'lock';
                     const firing = enemy.rgPhase === 'fire' && enemy.rgTimer > 40;
                     if (charging || firing) {
                         const chA = firing ? 1 : (0.4 + Math.sin(Date.now() * 0.04) * 0.4);
@@ -8360,10 +8702,18 @@
                     ctx.setLineDash([6, 10]);
                     ctx.beginPath(); ctx.arc(ex, ey, 260, 0, Math.PI * 2); ctx.stroke();
                     ctx.setLineDash([]);
+                    // Emission flare: the core swells briefly whenever it fires a ring
+                    let riftFlare = 0;
+                    if (enemy.riftPulse > 0) {
+                        enemy.riftPulse -= game.frameScale || 1;
+                        riftFlare = enemy.riftPulse / 14;
+                        ctx.fillStyle = `rgba(160, 80, 255, ${riftFlare * 0.35})`;
+                        ctx.beginPath(); ctx.arc(ex, ey, 30 + riftFlare * 10, 0, Math.PI * 2); ctx.fill();
+                    }
                     for (let l = 3; l >= 1; l--) {
                         ctx.fillStyle = l === 1 ? '#08000f' : (l === 2 ? '#330066' : '#7700dd');
                         ctx.beginPath();
-                        ctx.ellipse(ex, ey, 7 * l, 4.2 * l, spin * (l % 2 === 0 ? -0.7 : 1), 0, Math.PI * 2);
+                        ctx.ellipse(ex, ey, (7 + riftFlare * 2) * l, (4.2 + riftFlare * 1.2) * l, spin * (l % 2 === 0 ? -0.7 : 1), 0, Math.PI * 2);
                         ctx.fill();
                     }
                     // Orbiting shards
@@ -8411,10 +8761,12 @@
                     return true;
                 }
                 case 'void_echo': {
-                    // A void-corrupted echo of the player's own ship, glitching
+                    // A void-corrupted echo of the player's own ship, glitching;
+                    // heavy static + dimming while destabilised (overheated)
                     ctx.save();
-                    ctx.globalAlpha *= 0.8;
-                    const glitch = Math.random() < 0.06 ? (Math.random() - 0.5) * 5 : 0;
+                    const stunned = enemy.echoStun > 0;
+                    ctx.globalAlpha *= stunned ? (0.35 + Math.random() * 0.25) : 0.8;
+                    const glitch = Math.random() < (stunned ? 0.5 : 0.06) ? (Math.random() - 0.5) * (stunned ? 9 : 5) : 0;
                     ctx.fillStyle = '#442277';
                     ctx.beginPath();
                     ctx.moveTo(ex + glitch, ey + 14);
@@ -10723,19 +11075,13 @@
                     shieldLevel: game.player.shieldLevel
                 },
                 weapons: {
-                    bulletCount: game.player.bulletCount,
-                    bulletSpeed: game.player.bulletSpeed,
-                    bulletDamage: game.player.bulletDamage,
-                    reloadTime: game.player.reloadTime,
+                    // Fields that actually exist on the player object (the old list of
+                    // bulletCount/spreadShot/lances etc. never existed — save was a no-op)
+                    firepower: game.player.firepower,
                     trackingGuns: game.player.trackingGuns,
-                    trackingBullets: game.player.trackingBullets,
-                    spreadShot: game.player.spreadShot,
-                    spreadShotLevel: game.player.spreadShotLevel,
-                    lances: game.player.lances,
-                    maxLances: game.player.maxLances,
-                    lanceSpeed: game.player.lanceSpeed,
-                    timeSlowCharges: game.player.timeSlowCharges,
-                    maxTimeSlowCharges: game.player.maxTimeSlowCharges
+                    curvedGun: game.player.curvedGun,
+                    rapidFire: game.player.rapidFire,
+                    speed: game.player.speed
                 },
                 enemies: [...game.enemies], // Copy current enemies
                 powerups: [...game.powerups], // Copy current powerups
@@ -10764,20 +11110,13 @@
             game.player.maxShield = game.checkpoint.player.maxShield;
             game.player.shieldLevel = game.checkpoint.player.shieldLevel;
             
-            // Restore weapons
-            game.player.bulletCount = game.checkpoint.weapons.bulletCount;
-            game.player.bulletSpeed = game.checkpoint.weapons.bulletSpeed;
-            game.player.bulletDamage = game.checkpoint.weapons.bulletDamage;
-            game.player.reloadTime = game.checkpoint.weapons.reloadTime;
-            game.player.trackingGuns = game.checkpoint.weapons.trackingGuns;
-            game.player.trackingBullets = game.checkpoint.weapons.trackingBullets;
-            game.player.spreadShot = game.checkpoint.weapons.spreadShot;
-            game.player.spreadShotLevel = game.checkpoint.weapons.spreadShotLevel;
-            game.player.lances = game.checkpoint.weapons.lances;
-            game.player.maxLances = game.checkpoint.weapons.maxLances;
-            game.player.lanceSpeed = game.checkpoint.weapons.lanceSpeed;
-            game.player.timeSlowCharges = game.checkpoint.weapons.timeSlowCharges;
-            game.player.maxTimeSlowCharges = game.checkpoint.weapons.maxTimeSlowCharges;
+            // Restore weapons (real player fields; see saveCheckpoint)
+            const _w = game.checkpoint.weapons;
+            if (_w.firepower !== undefined) game.player.firepower = _w.firepower;
+            if (_w.trackingGuns !== undefined) game.player.trackingGuns = _w.trackingGuns;
+            if (_w.curvedGun !== undefined) game.player.curvedGun = _w.curvedGun;
+            if (_w.rapidFire !== undefined) game.player.rapidFire = _w.rapidFire;
+            if (_w.speed !== undefined) game.player.speed = _w.speed;
             
             // Restore game objects
             game.enemies = [...game.checkpoint.enemies];
@@ -11465,7 +11804,7 @@
                         boss.bomb.waveTimer += frameScale;
                         
                         // Create additional waves of bullets during explosion - ULTRA Enhanced
-                        if (boss.bomb.waveTimer === 30 && boss.bomb.waveCount < 1) { // Wave 2 at 0.5 seconds
+                        if (boss.bomb.waveTimer >= 30 && boss.bomb.waveCount < 1) { // Wave 2 at 0.5 seconds
                             boss.bomb.waveCount++;
                             for (let i = 0; i < 44; i++) { // Increased from 32
                                 const angle = (i / 44) * Math.PI * 2 + 0.13; // Offset angle for variety
@@ -11484,7 +11823,7 @@
                             }
                         }
                         
-                        if (boss.bomb.waveTimer === 60 && boss.bomb.waveCount < 2) { // Wave 3 at 1 second
+                        if (boss.bomb.waveTimer >= 60 && boss.bomb.waveCount < 2) { // Wave 3 at 1 second
                             boss.bomb.waveCount++;
                             // Multi-wave pattern with spirals - ENHANCED
                             for (let wave = 0; wave < 3; wave++) { // Increased from 2 waves to 3
@@ -11506,7 +11845,7 @@
                             }
                         }
                         
-                        if (boss.bomb.waveTimer === 90 && boss.bomb.waveCount < 3) { // Wave 4 at 1.5 seconds
+                        if (boss.bomb.waveTimer >= 90 && boss.bomb.waveCount < 3) { // Wave 4 at 1.5 seconds
                             boss.bomb.waveCount++;
                             for (let i = 0; i < 40; i++) { // Increased from 30
                                 const angle = (i / 40) * Math.PI * 2 + 0.4; // Another offset
@@ -11525,7 +11864,7 @@
                             }
                         }
                         
-                        if (boss.bomb.waveTimer === 120 && boss.bomb.waveCount < 4) { // Wave 5 - Enhanced Plus Pattern at 2 seconds
+                        if (boss.bomb.waveTimer >= 120 && boss.bomb.waveCount < 4) { // Wave 5 - Enhanced Plus Pattern at 2 seconds
                             boss.bomb.waveCount++;
                             
                             // Create + shaped bullet arrays (cardinal and diagonal directions)
@@ -11561,7 +11900,7 @@
                         }
                         
                         // Add new spiral wave at 2.5 seconds
-                        if (boss.bomb.waveTimer === 150 && boss.bomb.waveCount < 5) { // Wave 6 - Spiral at 2.5 seconds
+                        if (boss.bomb.waveTimer >= 150 && boss.bomb.waveCount < 5) { // Wave 6 - Spiral at 2.5 seconds
                             boss.bomb.waveCount++;
                             
                             // Triple spiral pattern with regular+ bullets
@@ -11585,7 +11924,9 @@
                         }
                         
                         // Continuous sporadic bullets throughout explosion - Enhanced
-                        if (boss.bomb.waveTimer % 6 === 0) { // Every 6 frames (increased frequency from 8)
+                        boss.bomb.sporadicTimer = (boss.bomb.sporadicTimer || 0) + frameScale;
+                        if (boss.bomb.sporadicTimer >= 6) { // Every 6 frames (increased frequency from 8)
+                            boss.bomb.sporadicTimer = 0;
                             for (let i = 0; i < 4; i++) { // Increased from 3
                                 const angle = Math.random() * Math.PI * 2;
                                 const speed = 1.5 + Math.random() * 4; // Random speed 1.5-5.5
@@ -11610,8 +11951,10 @@
                             Math.pow(game.player.y - boss.bomb.y, 2)
                         );
                         if (dist <= 120 && !game.invincible) { // Reasonable instant kill distance (unless invincible)
-                            game.player.health = 0;
+                            // Trigger the full death sequence — just zeroing health left the
+                            // player alive at 0 HP (regen would even tick them back up)
                             game.player.shield = 0;
+                            if (!game.playerExploding) triggerPlayerDeath();
                         }
                         
                         if (boss.bomb.explosionTimer <= 0) {
@@ -11734,6 +12077,8 @@
                     );
                     if (sdDistToPlayer < 90 && !game.invincible) {
                         game.player.health = Math.max(0, game.player.health - 1.5 * frameScale);
+                        // The drain must actually kill — nothing else polls health hitting 0
+                        if (game.player.health <= 0 && !game.playerExploding) triggerPlayerDeath();
                     }
                     
                     // Fire bullet waves every 25 frames (~14 waves over 6 seconds)
@@ -11891,15 +12236,19 @@
                         warningElement.id = 'selfDestructWarning';
                         document.body.appendChild(warningElement);
                         
-                        // Add blinking CSS animation if not exists
-                        const style = document.createElement('style');
-                        style.textContent = `
-                            @keyframes blink {
-                                0%, 50% { opacity: 1; }
-                                51%, 100% { opacity: 0.3; }
-                            }
-                        `;
-                        document.head.appendChild(style);
+                        // Add blinking CSS animation if not exists (guarded so repeated
+                        // self-destruct triggers in sandbox don't leak <style> tags into <head>)
+                        if (!document.getElementById('selfDestructBlinkStyle')) {
+                            const style = document.createElement('style');
+                            style.id = 'selfDestructBlinkStyle';
+                            style.textContent = `
+                                @keyframes blink {
+                                    0%, 50% { opacity: 1; }
+                                    51%, 100% { opacity: 0.3; }
+                                }
+                            `;
+                            document.head.appendChild(style);
+                        }
                         
                         // Remove warning after 2 seconds
                         setTimeout(() => {
@@ -12002,7 +12351,15 @@
                 const _phaseLabelEl = document.getElementById('bossPhaseLabel');
                 if (_phaseLabelEl) {
                     const _maxPhase = boss.type === 'gatekeeper' ? 7 : 3;
-                    _phaseLabelEl.textContent = 'Phase ' + boss.phase + ' / ' + _maxPhase;
+                    // Machine boss never advances boss.phase (it scales continuously via
+                    // voidCorruption instead), so derive a display-only phase from health
+                    // to match the same health brackets the other 3-phase bosses use.
+                    let _displayPhase = boss.phase;
+                    if (boss.type === 'machine') {
+                        const _hp = boss.health / boss.maxHealth;
+                        _displayPhase = _hp > 0.66 ? 1 : _hp > 0.33 ? 2 : 3;
+                    }
+                    _phaseLabelEl.textContent = 'Phase ' + _displayPhase + ' / ' + _maxPhase;
                     _phaseLabelEl.style.display = 'block';
                 }
             }
@@ -12044,8 +12401,9 @@
             }
 
             function getRightGunPositions() {
-                const machine2X = boss.x + 120;
-                const machine2Y = boss.y + 30;
+                // Mirror the left gun cluster (+120 put these bullets 45px off the hull)
+                const machine2X = boss.x + 80;
+                const machine2Y = boss.y + 20;
                 return [
                     {x: machine2X - 15, y: machine2Y - 15, angle: Math.PI * 1.25},
                     {x: machine2X + 15, y: machine2Y - 15, angle: Math.PI * 1.75},
@@ -12291,6 +12649,7 @@
                 1: () => { // Void pulse wave
                     for (let pulse = 0; pulse < 4; pulse++) { // Reduced by ~15% from 5
                         setTimeout(() => {
+                            if (game.boss !== boss || boss.exploding) return; // boss died mid-pattern
                             const bulletsInPulse = 14; // Reduced by ~15% from 16
                             for (let i = 0; i < bulletsInPulse; i++) {
                                 const angle = (i / bulletsInPulse) * Math.PI * 2 + pulse * 0.2;
@@ -12360,6 +12719,7 @@
             // Reduced waves for better performance
             for (let wave = 0; wave < 2; wave++) { // Reduced from 3 waves
                 setTimeout(() => {
+                    if (game.boss !== boss || boss.exploding) return; // boss died mid-attack
                     for (let i = 0; i < barrageCount / 2; i++) { // Updated for 2 waves
                         // Random spread around boss for initial positions
                         const spreadRadius = 80 + Math.random() * 40;
@@ -12396,6 +12756,7 @@
             
             // Reduced additional burst from specific directions
             setTimeout(() => {
+                if (game.boss !== boss || boss.exploding) return; // boss died mid-attack
                 // Reduced top edge barrage
                 for (let i = 0; i < 8; i++) { // Reduced from 15
                     const bullet = {
@@ -12613,17 +12974,18 @@
                 exploded: false,
                 timer: 0,
                 flashTimer: 0,
-                isLaserBomb: true
+                isLaserBomb: true,
+                healthPercent: boss.health / boss.maxHealth
             };
-            
+
             // Calculate movement direction
             const dx = laserBomb.targetX - laserBomb.x;
             const dy = laserBomb.targetY - laserBomb.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
-            
+
             laserBomb.speedX = (dx / distance) * laserBomb.speed;
             laserBomb.speedY = (dy / distance) * laserBomb.speed;
-            
+
             boss.laserBombs.push(laserBomb);
         }
         
@@ -12714,11 +13076,12 @@
         }
         
         function updateClusterBombs(boss) {
+            const cbFrameScale = game.combinedFrameScale || 1; // respect slow-mo like everything else
             boss.clusterBombs.forEach((bomb, index) => {
                 if (!bomb.exploded) {
-                    bomb.x += bomb.speedX;
-                    bomb.y += bomb.speedY;
-                    bomb.timer++;
+                    bomb.x += bomb.speedX * cbFrameScale;
+                    bomb.y += bomb.speedY * cbFrameScale;
+                    bomb.timer += cbFrameScale;
                     
                     // Explode after traveling a certain distance or time
                     if (bomb.y > boss.y + 150 || bomb.timer > 120 || bomb.y > canvas.height - 50) { // 2 seconds max or near bottom
@@ -12733,12 +13096,13 @@
         }
         
         function updateDestroyerLaserBombs(boss) {
+            const lbFrameScale = game.combinedFrameScale || 1; // respect slow-mo like everything else
             boss.laserBombs.forEach((bomb, index) => {
                 if (!bomb.exploded) {
-                    bomb.x += bomb.speedX;
-                    bomb.y += bomb.speedY;
-                    bomb.timer++;
-                    bomb.flashTimer++;
+                    bomb.x += bomb.speedX * lbFrameScale;
+                    bomb.y += bomb.speedY * lbFrameScale;
+                    bomb.timer += lbFrameScale;
+                    bomb.flashTimer += lbFrameScale;
                     
                     // Check if reached target or timed out
                     const distToTarget = Math.sqrt(
@@ -12753,8 +13117,10 @@
                 }
             });
             
-            // Remove old exploded bombs
-            boss.laserBombs = boss.laserBombs.filter(bomb => !bomb.exploded || bomb.timer < bomb.explosionTimer + 120);
+            // Remove old exploded bombs once their explosion visual has played out
+            // (the old check compared against bomb.timer, which freezes on explosion —
+            // bombs that exploded early were never removed from the array)
+            boss.laserBombs = boss.laserBombs.filter(bomb => !bomb.exploded || bomb.explosionTimer > 0);
         }
         
         function explodeClusterBomb(bomb) {
@@ -12788,8 +13154,23 @@
             );
             
             if (distToPlayer < 35 && !game.invincible) { // Reduced from 50 to 35
-                game.player.health -= 150; // High damage but not instant death
-                if (game.player.health < 0) game.player.health = 0;
+                // High damage but not instant death — routed through the shield like
+                // every other damage source (this path used to bypass it entirely)
+                const cbDmg = 150;
+                const hadShield = game.player.shield > 0;
+                if (hadShield) {
+                    const toShield = Math.min(cbDmg, game.player.shield);
+                    game.player.shield -= toShield;
+                    if (cbDmg - toShield > 0) game.player.health -= cbDmg - toShield;
+                } else {
+                    game.player.health -= cbDmg;
+                }
+                updateHealthLevel();
+                createPlayerHitEffect(game.player.x, game.player.y, cbDmg, { shield: hadShield });
+                if (game.player.health <= 0) {
+                    game.player.health = 0;
+                    if (!game.playerExploding) triggerPlayerDeath();
+                }
             }
             
             // Create cluster bullet explosion - reduced
@@ -12825,6 +13206,8 @@
             
             // Fire lasers after explosion visual completes
             setTimeout(() => {
+                // Boss-owned weapon: skip if the destroyer died/despawned during the 1.5s wait
+                if (!game.boss || game.boss.exploding) return;
                 // Fire three lasers in different directions
                 const laserDirections = [
                     Math.random() * Math.PI * 2, // Random direction
@@ -12936,7 +13319,7 @@
             // Add randomness to laser firing in later phases
             const randomFiring = boss.attackChaos > 0.5 && Math.random() < 0.02;
             
-            if (boss.laserTimer >= boss.laserCooldown || randomFiring) {
+            if (!boss.blackHolePhase && (boss.laserTimer >= boss.laserCooldown || randomFiring)) {
                 fireMachineLaser(boss);
                 boss.laserTimer = 0;
                 
@@ -12996,7 +13379,7 @@
             // Check for rest period before allowing new attacks
             const isRestPeriod = boss.nextAttackTime && Date.now() < boss.nextAttackTime;
             
-            if (timeSinceLastAttack > attackInterval && !isRestPeriod) {
+            if (timeSinceLastAttack > attackInterval && !isRestPeriod && !boss.blackHolePhase) {
                 fireMachinePattern(boss);
                 boss.lastShot = Date.now();
                 
@@ -13044,6 +13427,26 @@
                         document.getElementById('bossHealth').style.display = 'none';
                         document.getElementById('bossName').style.display = 'none'; document.getElementById('bossClassLabel').style.display = 'none';
                         document.getElementById('bossPhaseLabel').style.display = 'none';
+                        // Safety net: this path bypasses the shared handleBossDeath() victory
+                        // logic, so replicate it here to avoid soft-locking after the black hole closes.
+                        game.enemies = [];
+                        game.enemyBullets = [];
+                        game.powerups = [];
+                        if (game.level >= 6) {
+                            game.finalVictory = true;
+                            stopMusic();
+                            playMusic('victory_music');
+                        } else if (game.difficultyMode === 'empty' && game.sandboxBossActive) {
+                            game.sandboxBossActive = false;
+                            game.level = 1;
+                            game.levelProgress = 0;
+                            game.maxLevelProgress = 8000;
+                            game.lastEnemySpawn = 0;
+                            playMusic('level1');
+                        } else {
+                            nextLevel();
+                        }
+                        playVictorySound();
                     }
                 }
             }
@@ -13153,14 +13556,24 @@
                 const laserWidth = 15;
                 
                 // Check if player is hit by laser
-                if (distanceToLaser <= laserWidth) {
-                    // Apply laser damage to player
+                if (distanceToLaser <= laserWidth && !game.invincible && !game.playerExploding) {
+                    // Apply laser damage to player — shield-first like every other damage
+                    // source (this path bypassed shield AND ignored invincibility)
                     const laserDamage = 85; // High damage for direct laser hit
-                    game.player.health -= laserDamage;
-                    
+                    const hadShield = game.player.shield > 0;
+                    if (hadShield) {
+                        const toShield = Math.min(laserDamage, game.player.shield);
+                        game.player.shield -= toShield;
+                        if (laserDamage - toShield > 0) game.player.health -= laserDamage - toShield;
+                    } else {
+                        game.player.health -= laserDamage;
+                    }
+                    updateHealthLevel();
+                    createPlayerHitEffect(game.player.x, game.player.y, laserDamage, { shield: hadShield });
+
                     // Visual feedback for player hit
                     game.player.lastHit = Date.now();
-                    
+
                     // Create damage number
                     game.damageNumbers.push({
                         x: game.player.x,
@@ -13169,7 +13582,11 @@
                         life: 60,
                         color: '#ff0000'
                     });
-                    
+
+                    if (game.player.health <= 0) {
+                        game.player.health = 0;
+                        triggerPlayerDeath();
+                    }
                 }
             }
         }
@@ -13203,8 +13620,8 @@
         }
         
         function explodeLaserBomb(boss, bomb) {
-            const healthPercent = bomb.health / bomb.maxHealth;
-            
+            const healthPercent = bomb.healthPercent !== undefined ? bomb.healthPercent : (boss.health / boss.maxHealth);
+
             // Determine bullet types based on boss health when bomb was created
             let regularCount = 0;
             let regularPlusCount = 0;
@@ -13372,17 +13789,21 @@
             
             for (let i = 0; i < bulletCount; i++) {
                 setTimeout(() => {
+                    if (!game.boss || game.boss !== boss) return; // boss may have died before this fired
                     const sourceX = boss.x + (Math.random() - 0.5) * boss.width;
                     const sourceY = boss.y + (Math.random() - 0.5) * boss.height;
                     const angle = Math.random() * Math.PI * 2;
                     const speed = 2 + Math.random() * 4;
-                    
+
                     createMachineBullet(sourceX, sourceY, Math.cos(angle) * speed, Math.sin(angle) * speed, boss);
                 }, Math.random() * 800); // Shorter timing spread for quicker chaos
             }
         }
         
         function createMachineBullet(x, y, speedX, speedY, boss) {
+            // Timed patterns route through here — drop bullets whose boss died/despawned
+            // between pattern start and this delayed spawn (covers all setTimeout patterns)
+            if (game.boss !== boss || boss.exploding || boss.blackHolePhase) return;
             // Determine bullet type based on corruption level
             let bulletType = 'regular';
             const rand = Math.random();
@@ -13749,7 +14170,6 @@
                 laserFiring: false, laserFireTimer: 0,
                 teleportWarning: false, teleportWarningTimer: 0, teleportTimer: 600,
                 clusterBombs: [], laserBombs: [], clusterBombPattern: 0,
-                lastCluster: Date.now() + 7000,
             };
             playMusic && playMusic('boss');
         }
@@ -14259,6 +14679,7 @@
                 const dx = game.player.x - z.x, dy = game.player.y - z.y;
                 if (Math.sqrt(dx*dx+dy*dy) < z.radius && !game.invincible) {
                     game.player.health = Math.max(0, game.player.health - 0.38 * frameScale);
+                    updateHealthLevel();
                 }
                 if (z.life <= 0) game.voidLingerZones.splice(i, 1);
             }
@@ -14925,13 +15346,16 @@
                 const rotationShake = Math.sin(boss.explosionTimer * 1.2) * 0.2 * explosionProgress;
                 const fadeAlpha = 1.0; // Boss remains fully visible during explosion
                 
-                // Enhanced explosion effects for The Knight
+                // Explosion flashes scale with the boss's actual footprint (the old fixed
+                // 40x30 orbit was sized for the Mark I and looked tiny on larger bosses)
                 const flashCount = boss.type === 'knight' ? 12 : 6;
-                const explosionSize = boss.type === 'knight' ? 30 : 20;
-                
+                const explosionSize = Math.max(boss.type === 'knight' ? 30 : 20, (boss.width || 120) * 0.16);
+                const flashOrbitX = Math.max(40, (boss.width || 120) * 0.38);
+                const flashOrbitY = Math.max(30, (boss.height || 80) * 0.38);
+
                 for (let i = 0; i < flashCount; i++) {
-                    const flashX = boss.x + Math.sin(boss.explosionTimer * 0.3 + i) * (boss.type === 'annihilator' ? 60 : 40);
-                    const flashY = boss.y + Math.cos(boss.explosionTimer * 0.4 + i) * (boss.type === 'annihilator' ? 45 : 30);
+                    const flashX = boss.x + Math.sin(boss.explosionTimer * 0.3 + i) * flashOrbitX;
+                    const flashY = boss.y + Math.cos(boss.explosionTimer * 0.4 + i) * flashOrbitY;
                     const flashSize = (Math.sin(boss.explosionTimer * 0.6 + i * 2) * 0.5 + 0.5) * explosionSize * explosionProgress;
                     
                     // Add to explosion flashes for debug labeling
@@ -14972,11 +15396,24 @@
                 ctx.rotate(rotationShake);
                 ctx.translate(-boss.x, -boss.y);
                 
-                // Boss body (flickering with different colors)
+                // Boss body (flickering with different colors) — each boss keeps its own
+                // sprite while dying (previously everything except the Knight flickered
+                // as a Mark I destroyer hull)
                 const flickerRate = Math.max(2, Math.floor(boss.explosionTimer / 8));
                 if (Math.floor(boss.explosionTimer / flickerRate) % 2 === 0) {
                     if (boss.type === 'knight') {
                         drawAnnihilatorBody(boss, explosionProgress);
+                    } else if (boss.type === 'destroyer2') {
+                        drawDestroyer2(boss);
+                    } else if (boss.type === 'destroyer3') {
+                        drawDestroyer3(boss);
+                    } else if (boss.type === 'count') {
+                        drawCount(boss);
+                    } else if (boss.type === 'gatekeeper') {
+                        drawGatekeeper(boss);
+                    } else if (boss.type === 'machine') {
+                        // Machine is drawn by drawBossBackground/Foreground even while
+                        // exploding (sandbox CLEAR ALL path) — nothing to draw here
                     } else {
                         drawDestroyerBody(boss, explosionProgress);
                     }
@@ -15160,21 +15597,29 @@
         
         // Draw boss background elements (behind player)
         function drawBossBackground() {
-            if (!game.boss || game.boss.health <= 0) return;
-            
+            // Keep drawing through the black-hole collapse (health <= 0) — the hole
+            // itself is rendered at the end of drawMachineOfTheVoid
+            if (!game.boss || (game.boss.health <= 0 && !game.boss.blackHolePhase)) return;
+
             // Only draw background for Machine Of The Void
             if (game.boss.type === 'machine') {
                 drawMachineOfTheVoid(game.boss); // This draws the landmass background
             }
         }
-        
+
         // Draw boss foreground elements (on top of player)
         function drawBossForeground() {
-            if (!game.boss || game.boss.health <= 0) return;
-            
+            if (!game.boss || (game.boss.health <= 0 && !game.boss.blackHolePhase)) return;
+
             // Only draw foreground for Machine Of The Void
             if (game.boss.type === 'machine') {
+                // Machinery fades out with the collapse, matching the background layer
+                ctx.save();
+                if (game.boss.blackHolePhase) {
+                    ctx.globalAlpha *= Math.max(0, 1 - game.boss.blackHoleTimer / 200);
+                }
                 drawMachineOfTheVoidMachinery(game.boss); // This draws the machinery on top
+                ctx.restore();
             }
         }
         
@@ -15975,10 +16420,17 @@
         
         function drawMachineOfTheVoid(boss) {
             const frameScale = game.frameScale || 1;
-            
+
             // Calculate void corruption effects
             const healthPercent = boss.health / boss.maxHealth;
             boss.voidCorruption = 0.1 + (1 - healthPercent) * 0.9; // 10% to 100% corruption
+
+            // Black-hole collapse: the machine fades out as the hole consumes it,
+            // so nothing snaps back into view when the hole shrinks away
+            ctx.save();
+            if (boss.blackHolePhase) {
+                ctx.globalAlpha *= Math.max(0, 1 - boss.blackHoleTimer / 200);
+            }
             
             // Base void landmass - opaque jagged natural landmass (BACKGROUND LAYER)
             // Make landmass extend off-screen and limit bottom roundness to halfway point
@@ -16488,24 +16940,55 @@
             
             // Draw laser bombs
             drawLaserBombs(boss);
-            
+
+            ctx.restore(); // end black-hole fade — the hole itself stays opaque
+
             // Black hole death animation
             if (boss.blackHolePhase) {
-                const holeRadius = boss.blackHoleSize;
-                
-                // Event horizon
-                ctx.fillStyle = '#000000';
-                ctx.beginPath();
-                ctx.arc(boss.x, boss.y, holeRadius, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Distortion rings
-                for (let i = 1; i <= 3; i++) {
-                    ctx.strokeStyle = `rgba(100, 0, 200, ${0.8 - boss.blackHoleTimer * 0.01})`;
-                    ctx.lineWidth = 2;
+                const holeRadius = Math.max(0, boss.blackHoleSize);
+                if (holeRadius > 0.5) {
+                    // Accretion glow — a bright violet rim so the hole reads against dark space
+                    // (the old rings faded to invisible ~1.3s into the 8s sequence)
+                    const bhGlow = ctx.createRadialGradient(boss.x, boss.y, holeRadius * 0.4, boss.x, boss.y, holeRadius * 2.2);
+                    bhGlow.addColorStop(0, 'rgba(0, 0, 0, 0)');
+                    bhGlow.addColorStop(0.45, 'rgba(120, 30, 220, 0.5)');
+                    bhGlow.addColorStop(0.62, 'rgba(170, 80, 255, 0.22)');
+                    bhGlow.addColorStop(1, 'rgba(60, 0, 120, 0)');
+                    ctx.fillStyle = bhGlow;
                     ctx.beginPath();
-                    ctx.arc(boss.x, boss.y, holeRadius + i * 20, 0, Math.PI * 2);
+                    ctx.arc(boss.x, boss.y, holeRadius * 2.2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Event horizon
+                    ctx.fillStyle = '#000000';
+                    ctx.beginPath();
+                    ctx.arc(boss.x, boss.y, holeRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Pulsing bright rim
+                    ctx.strokeStyle = `rgba(200, 130, 255, ${0.65 + Math.sin(boss.blackHoleTimer * 0.2) * 0.25})`;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.arc(boss.x, boss.y, holeRadius + 1, 0, Math.PI * 2);
                     ctx.stroke();
+
+                    // Distortion rings — stay visible for the whole sequence
+                    for (let i = 1; i <= 3; i++) {
+                        ctx.strokeStyle = `rgba(110, 20, 210, ${0.38 / i})`;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(boss.x, boss.y, holeRadius + i * 20, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+
+                    // In-falling debris streaks spiralling toward the horizon
+                    for (let s = 0; s < 7; s++) {
+                        const fall = 1 - ((boss.blackHoleTimer * 2.2 + s * 31) % 70) / 70;
+                        const sa = boss.blackHoleTimer * 0.04 + s * (Math.PI * 2 / 7) + fall * 1.8;
+                        const sr = holeRadius + 8 + fall * 68;
+                        ctx.fillStyle = `rgba(210, 160, 255, ${0.25 + (1 - fall) * 0.5})`;
+                        ctx.fillRect(boss.x + Math.cos(sa) * sr - 1.5, boss.y + Math.sin(sa) * sr - 1.5, 3, 3);
+                    }
                 }
             }
         }
@@ -17452,7 +17935,7 @@
             let closestDistance = Infinity;
             
             const allEnemies = [...game.enemies];
-            if (game.boss && !game.boss.exploding) {
+            if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                 allEnemies.push(game.boss);
             }
             
@@ -17476,24 +17959,22 @@
                         createHitExplosion(closestEnemy.x, closestEnemy.y);
                     } else {
                         closestEnemy.health -= 50;
+                        // Sandbox: keep boss alive when enemy invincibility is active
+                        if (game.sandboxInvincibleEnemies) closestEnemy.health = Math.max(1, closestEnemy.health);
                         createHitExplosion(closestEnemy.x, closestEnemy.y);
-                        
-                        if (closestEnemy.health <= 0) {
-                            game.score += 1000;
-                            createBossExplosion(closestEnemy.x, closestEnemy.y);
-                            closestEnemy.exploding = true;
-                            closestEnemy.explosionTimer = 180;
-                            game.bossDeathPause = true;
-                            game.bossDeathTimer = 0;
-                            document.getElementById('bossHealth').style.display = 'none';
-                            document.getElementById('bossName').style.display = 'none'; document.getElementById('bossClassLabel').style.display = 'none';
-                            document.getElementById('bossPhaseLabel').style.display = 'none';
+
+                        // Shared death sequence (this inline copy skipped the death sound,
+                        // slowdown cancel and the self-destruct guard)
+                        if (closestEnemy.health <= 0 && !closestEnemy.selfDestructExploding) {
+                            handleBossDeath();
                         }
                     }
                 } else {
                     closestEnemy.health -= 50;
+                    // Sandbox: keep enemies alive when enemy invincibility is active
+                    if (game.sandboxInvincibleEnemies) closestEnemy.health = Math.max(1, closestEnemy.health);
                     createHitExplosion(closestEnemy.x, closestEnemy.y);
-                    
+
                     if (closestEnemy.health <= 0) {
                         game.score += closestEnemy.points;
                         createDeathExplosion(closestEnemy.x, closestEnemy.y, closestEnemy.type);
@@ -17561,7 +18042,7 @@
             let closestDistance = Infinity;
             
             const allEnemies = [...game.enemies];
-            if (game.boss && !game.boss.exploding) {
+            if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                 allEnemies.push(game.boss);
             }
             
@@ -17849,7 +18330,7 @@
                 }
                 
                 // Boss collision check - optimized
-                if (game.boss && !game.boss.exploding) {
+                if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                     const boss = game.boss;
                     const bossId = 'boss'; // Unique ID for boss
                     
@@ -17901,6 +18382,7 @@
                             // Create bullet explosion if boss dies
                             if (boss.health <= 0) {
                                 createLanceBurst(boss.x, boss.y, Math.floor(lance.damage * 0.5), 12);
+                                if (!boss.selfDestructExploding) handleBossDeath();
                             }
                         }
                     }
@@ -17997,7 +18479,13 @@
         // Bullet functions - optimized with reverse loops
         function updateBullets() {
             const frameScale = game.frameScale || 1; // Frame rate independence
-            
+
+            // v59.4 candidates: active void rifts bend nearby player bullets (gravity well)
+            let _rifts = null;
+            for (let ri = 0; ri < game.enemies.length; ri++) {
+                if (game.enemies[ri].type === 'void_rift') { (_rifts = _rifts || []).push(game.enemies[ri]); }
+            }
+
             // Player bullets - reverse loop for better performance
             for (let i = game.bullets.length - 1; i >= 0; i--) {
                 const bullet = game.bullets[i];
@@ -18015,7 +18503,7 @@
                         
                         // Get all available enemies
                         const allEnemies = [...game.enemies];
-                        if (game.boss && !game.boss.exploding) {
+                        if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                             allEnemies.push(game.boss);
                         }
                         
@@ -18078,6 +18566,23 @@
                     }
                 }
                 
+                // v59.4: rift gravity — bullets passing near a void rift curve toward it.
+                // Subtle enough to aim through, strong enough that the rift visibly eats
+                // careless fire; shooting from outside the radius stays clean
+                if (_rifts) {
+                    for (let rr = 0; rr < _rifts.length; rr++) {
+                        const rw = _rifts[rr];
+                        const rwdx = rw.x - bullet.x, rwdy = rw.y - bullet.y;
+                        const rwd2 = rwdx * rwdx + rwdy * rwdy;
+                        if (rwd2 < 140 * 140 && rwd2 > 1) {
+                            const rwd = Math.sqrt(rwd2);
+                            const bend = 0.22 * (1 - rwd / 140) * frameScale;
+                            bullet.speedX += (rwdx / rwd) * bend;
+                            bullet.speedY += (rwdy / rwd) * bend;
+                        }
+                    }
+                }
+
                 // Player bullets are NOT time-dilated; they always move at regular speed
                 bullet.x += bullet.speedX * frameScale;
                 bullet.y += bullet.speedY * frameScale;
@@ -18429,12 +18934,15 @@
                 // ─── v59.4 candidate special bullets ────────────────────────────
                 if (bullet.isProxMine) {
                     bullet.mineAge += game.frameScale;
+                    // Drop, then brake to a hover — mines hold their band instead of drifting off
+                    bullet.speedY *= Math.pow(0.955, game.frameScale);
                     const mpdx = game.player.x - bullet.x, mpdy = game.player.y - bullet.y;
                     const proximity = bullet.mineAge > 30 && (mpdx * mpdx + mpdy * mpdy < 70 * 70);
                     if (proximity || bullet.mineAge > 360) {
-                        // Burst into a 6-bullet ring
+                        // Burst into a 6-bullet ring, oriented so one fragment leads at the player
+                        const mineAimA = Math.atan2(mpdy, mpdx);
                         for (let m = 0; m < 6; m++) {
-                            const ma = (m / 6) * Math.PI * 2 + Math.random() * 0.3;
+                            const ma = mineAimA + (m / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.15;
                             game.enemyBullets.push({
                                 x: bullet.x, y: bullet.y, width: 6, height: 6,
                                 speedX: Math.cos(ma) * 3.2, speedY: Math.sin(ma) * 3.2, damage: 30
@@ -18452,6 +18960,12 @@
                     const lod = Math.sqrt(lodx * lodx + lody * lody) || 1;
                     bullet.speedX += ((lodx / lod) * 2.2 - bullet.speedX) * 0.04 * game.frameScale;
                     bullet.speedY += ((lody / lod) * 2.2 - bullet.speedY) * 0.04 * game.frameScale;
+                    // Wispy pink trail so the slow drain threat reads at a glance
+                    if (game.particles.length < 300 && Math.random() < 0.3) {
+                        game.particles.push({ x: bullet.x, y: bullet.y, speedX: (Math.random() - 0.5) * 0.4, speedY: (Math.random() - 0.5) * 0.4, life: 14, maxLife: 14, color: '#dd66bb', size: 1.6 });
+                    }
+                } else if (bullet.isAltShell && bullet.y < bullet.targetY) {
+                    bullet.speedY += 0.022 * game.frameScale; // lobbed shell accelerates as it falls
                 } else if (bullet.isAltShell && bullet.y >= bullet.targetY) {
                     // Altitude fuse: burst into 4 diagonal fragments
                     for (let f = 0; f < 4; f++) {
@@ -18838,6 +19352,17 @@
                     ctx.fillRect(bullet.x - 4, bullet.y - 5, 8, 10);
                     ctx.fillStyle = '#bb3322';
                     ctx.fillRect(bullet.x - 4, bullet.y + 2, 8, 3);
+                    // Faint fuse marker at the detonation altitude — the flak lane is readable
+                    if (bullet.targetY !== undefined && bullet.targetY - bullet.y < 240) {
+                        ctx.strokeStyle = 'rgba(255, 120, 60, 0.28)';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([4, 6]);
+                        ctx.beginPath();
+                        ctx.moveTo(bullet.x - 24, bullet.targetY);
+                        ctx.lineTo(bullet.x + 24, bullet.targetY);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
                 } else if (bullet.isClusterBullet) {
                     // Cluster bomb explosion bullets (v59.3: cached sprite)
                     const spr = _getBulletSprite('cluster', bullet.width);
@@ -19634,7 +20159,8 @@
                         maxHealth: enemyTypes.void_splitterling.health,
                         lastShot: Date.now() - Math.random() * 800,
                         type: 'void_splitterling',
-                        slDriftX: s * (2.2 + Math.random() * 1.2)
+                        slDriftX: s * (2.2 + Math.random() * 1.2),
+                        slDriftY: -(1.2 + Math.random() * 0.8) // pop upward before descending
                     };
                     game.enemies.push(child);
                 }
@@ -19671,6 +20197,10 @@
 
         // v59.3: shared boss-death sequence (was duplicated across three collision branches)
         function handleBossDeath() {
+            // Re-entry guard: two hits landing on the same death frame must not
+            // replay the death sound or award the kill score twice
+            if (game.boss.exploding || game.boss.blackHolePhase) return;
+
             game.score += 1000;
 
             // Cancel slowdown effect if active to allow smooth boss death animation
@@ -19683,6 +20213,29 @@
                 }
             }
 
+            document.getElementById('bossHealth').style.display = 'none';
+            document.getElementById('bossName').style.display = 'none';
+            document.getElementById('bossClassLabel').style.display = 'none';
+            document.getElementById('bossPhaseLabel').style.display = 'none';
+
+            // Machine Of The Void dies via its black-hole collapse instead of the
+            // generic explosion (the sequence in updateMachineOfTheVoid was unreachable
+            // because every kill path routed through here first)
+            if (game.boss.type === 'machine') {
+                const boss = game.boss;
+                playSfxVariant('Machine_BlackHole', 0.8, 0.04, 0.03);
+                boss.health = Math.min(boss.health, 0);
+                boss.blackHolePhase = true;
+                boss.blackHoleTimer = 0;
+                boss.blackHoleSize = 5;
+                // Cut all ordnance so the collapse plays out clean
+                boss.laserBombs = [];
+                boss.laserWarningActive = false;
+                boss.laserBeamActive = false;
+                game.enemyBullets = [];
+                return;
+            }
+
             // v59.5: long explosion matched to the 3s death animation; engine fades via updateBossEngine
             playSfxVariant(game.boss.type === 'gatekeeper' ? 'Gatekeeper_Death' : 'Boss_Explosion_Long', 0.85, 0.04, 0.03);
 
@@ -19692,11 +20245,6 @@
             game.boss.explosionTimer = 180; // 3 seconds
             game.bossDeathPause = true;
             game.bossDeathTimer = 0;
-
-            document.getElementById('bossHealth').style.display = 'none';
-            document.getElementById('bossName').style.display = 'none';
-            document.getElementById('bossClassLabel').style.display = 'none';
-            document.getElementById('bossPhaseLabel').style.display = 'none';
         }
 
         // v59.3: shared player-death sequence (was duplicated; the boss-ram path lacked shrapnel)
@@ -19815,6 +20363,7 @@
                     // v59.4: aegis frontal shield blocks fire rising from below;
                     // flank it or wait for the vent cycle (tracking shots that dive work too)
                     if (enemy.type === 'aegis' && enemy.shieldUp && bullet.speedY < 0) {
+                        enemy.aegisBlocked = (enemy.aegisBlocked || 0) + 1; // 12 soaked hits staggers the shield
                         createHitExplosion(bullet.x, bullet.y + 4);
                         if (game.particles.length < 350) {
                             game.particles.push({ x: bullet.x, y: bullet.y + 6, speedX: (Math.random() - 0.5) * 2, speedY: 1.5, life: 14, maxLife: 14, color: '#ffcc66', size: 2 });
@@ -19878,7 +20427,7 @@
 
                 // Player bullets vs boss (tracking overflow bullets bypass the Knight shield
                 // and deal reduced damage — preserved from the old special-case branch)
-                if (game.boss && !game.boss.exploding && isColliding(bullet, game.boss)) {
+                if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase && isColliding(bullet, game.boss)) {
                     if (game.boss.shieldActive && game.boss.type === 'knight' && !bullet.isTrackingOverflow) {
                         // Shield blocks the bullet
                         createHitExplosion(bullet.x, bullet.y);
@@ -19950,6 +20499,7 @@
                     // v59.4: aegis frontal shield blocks fire rising from below;
                     // flank it or wait for the vent cycle (tracking shots that dive work too)
                     if (enemy.type === 'aegis' && enemy.shieldUp && bullet.speedY < 0) {
+                        enemy.aegisBlocked = (enemy.aegisBlocked || 0) + 1; // 12 soaked hits staggers the shield
                         createHitExplosion(bullet.x, bullet.y + 4);
                         if (game.particles.length < 350) {
                             game.particles.push({ x: bullet.x, y: bullet.y + 6, speedX: (Math.random() - 0.5) * 2, speedY: 1.5, life: 14, maxLife: 14, color: '#ffcc66', size: 2 });
@@ -19981,7 +20531,7 @@
                 if (bulletConsumed) { game.trackingBullets.splice(bulletIndex, 1); continue; }
 
                 // Tracking bullets vs boss
-                if (game.boss && !game.boss.exploding && isColliding(bullet, game.boss)) {
+                if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase && isColliding(bullet, game.boss)) {
                     // Check if boss has active shield (Knight only)
                     if (game.boss.shieldActive && game.boss.type === 'knight') {
                         // Shield blocks the bullet
@@ -20208,7 +20758,7 @@
             }
 
             // Player vs boss body (ramming damage to player only, boss takes no damage)
-            if (game.boss && !game.boss.exploding && !game.boss.selfDestructExploding && !game.invincible && isColliding(game.boss, game.player)) {
+            if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase && !game.boss.selfDestructExploding && !game.invincible && isColliding(game.boss, game.player)) {
                 const collisionDamage = 40;
                 if (game.player.shield > 0) {
                     const damageToShield = Math.min(collisionDamage, game.player.shield);
@@ -21130,25 +21680,15 @@
                         if (game.player.shield > 0) {
                             const shieldAbs = Math.min(dmg, game.player.shield);
                             game.player.shield -= shieldAbs;
+                            if (game.player.shield <= 0) playSfxVariant('Player_Shield_Deplete', 0.72, 0.08, 0.06);
                             const rem = dmg - shieldAbs;
-                            if (rem > 0) game.player.health -= rem;
+                            if (rem > 0) { game.player.health -= rem; updateHealthLevel(); }
                         } else {
                             game.player.health -= dmg;
+                            updateHealthLevel();
                         }
                         if (game.player.health <= 0) {
-                            game.playerExploding = true;
-                            game.playerExplosionTimer = game.playerExplosionDuration;
-                            playGameOverSound();
-                            game.playerShrapnel = [];
-                            for (let pi = 0; pi < 8; pi++) {
-                                const pa = (Math.PI * 2 * pi / 8) + (Math.random() - 0.5) * 0.3;
-                                const ps = 6 + Math.random() * 4;
-                                game.playerShrapnel.push({
-                                    x: game.player.x, y: game.player.y,
-                                    vx: Math.cos(pa) * ps, vy: Math.sin(pa) * ps,
-                                    life: 120, maxLife: 120, size: 4 + Math.random() * 3, rotation: Math.random() * Math.PI * 2, spin: (Math.random() - 0.5) * 0.15
-                                });
-                            }
+                            triggerPlayerDeath(); // v59.3 shared death sequence (proper shrapnel waves)
                         }
                         game.enemyShrapnel.splice(i, 1);
                         continue;
@@ -22556,7 +23096,7 @@
                 }
 
                 // Boss damage check - optimized and aligned with visual effect
-                if (game.boss && !game.boss.exploding) {
+                if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                     const dx = game.boss.x - s.x;
                     const dy = game.boss.y - s.y;
                     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -22576,24 +23116,9 @@
                         s.damagedEnemies.add(game.boss);
                         createHitExplosion(game.boss.x, game.boss.y);
                         if (game.boss.health <= 0 && !game.boss.selfDestructExploding) {
-                            game.score += 1000;
-                            
-                            // Cancel slowdown effect if active to allow smooth boss death animation
-                            if (game.slowEffectActive) {
-                                game.slowEffectActive = false;
-                                game.slowEffectEnd = 0;
-                                // Restore player speed if slowdown was active
-                                if (game.slowEffectOriginalSpeed !== undefined) {
-                                    game.player.speed = game.slowEffectOriginalSpeed;
-                                    game.slowEffectOriginalSpeed = undefined;
-                                }
-                                console.log('Slowdown cancelled due to boss death');
-                            }
-                            
-                            createBossExplosion(game.boss.x, game.boss.y);
-                            game.boss.exploding = true;
-                            game.boss.explosionTimer = 180;
-                            game.bossDeathPause = true;
+                            // Shared death sequence (this inline copy skipped the death sound,
+                            // the boss-UI hide and the bossDeathTimer reset)
+                            handleBossDeath();
                         }
                     }
                 }
@@ -23695,6 +24220,15 @@
             game.particles = [];
             game.lances = [];
             game.boss = null;
+            game.trackingBullets = [];
+            game.asteroids = [];
+            game.shockwaves = [];
+            game.bulletEraseRings = [];
+            game.explosionFlashes = [];
+            game.blackHoles = [];
+            game.bossCharges = [];
+            game.bossWarnings = [];
+            game.scorePopups = [];
             game.score = 0;
             game.level = 1;
             game.levelProgress = 0;
@@ -24240,7 +24774,7 @@
                 asteroid_layer: 'Asteroid Layer', mini_asteroid_layer: 'Mini Asteroid Layer', void_asteroid_layer: 'Void Asteroid Layer', void_turret: 'Void Turret', dreadnought: 'Dreadnought', void_dreadnought: 'Void Dreadnought', warship: 'Warship', asteroid: 'Asteroid',
                 fighter_jet: 'Fighter Jet',
                 defender_normal: 'Defender Normal', defender_fast: 'Defender Fast', defender_heavy: 'Defender Heavy', defender_zigzag: 'Defender Zigzag', defender_sniper: 'Defender Sniper', defender_elite: 'Defender Elite',
-                defender_stealth_fighter: 'Stealth Fighter',
+                defender_stealth_fighter: 'Stealth Fighter', missile_launcher: 'Missile Launcher', void_generator: 'Void Generator',
                 // v59.4 candidate enemies (testing)
                 aegis: '★ Aegis Phalanx', minelayer: '★ Minelayer', breacher: '★ Breacher',
                 void_phantom: '★ Void Phantom', void_leech: '★ Void Leech', void_splitter: '★ Void Splitter',
@@ -24255,7 +24789,7 @@
                 void_master: '#bb44ff', void_protector: '#b040ff', asteroid_layer: '#7a9a33', mini_asteroid_layer: '#66753a', void_asteroid_layer: '#9933cc', dreadnought: '#888899', void_dreadnought: '#663388', warship: '#4455aa', asteroid: '#88aa88',
                 fighter_jet: '#dd3322',
                 defender_normal: '#cc2222', defender_fast: '#ffaa00', defender_heavy: '#991111', defender_zigzag: '#ff5500', defender_sniper: '#ddcc00', defender_elite: '#dd1111',
-                defender_stealth_fighter: '#cc6622',
+                defender_stealth_fighter: '#cc6622', missile_launcher: '#cc3300', void_generator: '#8844dd',
                 // v59.4 candidate enemies (testing)
                 aegis: '#ff9933', minelayer: '#ffaa44', breacher: '#ff7744',
                 void_phantom: '#aa66ee', void_leech: '#bb55cc', void_splitter: '#9955bb',
@@ -24267,7 +24801,7 @@
                 ['drone', 'void_soldier'], ['void_normal', 'void_drone'], ['void_sniper', 'void_warrior'],
                 ['void_master', 'asteroid_layer'], ['dreadnought', 'asteroid'], ['void_dreadnought'], ['mini_asteroid_layer'],
                 ['void_asteroid_layer'], ['defender_normal', 'defender_fast'], ['defender_zigzag', 'defender_sniper'], ['defender_heavy', 'defender_elite'],
-                ['warship', 'fighter_jet'], ['defender_stealth_fighter'], ['void_protector'], ['void_turret'],
+                ['warship', 'fighter_jet'], ['defender_stealth_fighter', 'missile_launcher'], ['void_protector'], ['void_turret', 'void_generator'],
                 // v59.4 candidate enemies — grouped by class for testing
                 ['aegis', 'minelayer'], ['breacher', 'void_phantom'], ['void_leech', 'void_splitter'],
                 ['defender_railgunner', 'defender_ace'], ['defender_bomber', 'void_rift'], ['void_conduit', 'void_echo']
@@ -24462,7 +24996,7 @@
             // Clear enemies (and kill any active boss via its death animation)
             document.getElementById('sbClear').addEventListener('click', () => {
                 game.enemies = [];
-                if (game.boss && !game.boss.exploding) {
+                if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                     playSfxVariant(game.boss.type === 'gatekeeper' ? 'Gatekeeper_Death' : 'Boss_Explosion_Long', 0.85, 0.04, 0.03); // v59.5
                     createBossExplosion(game.boss.x, game.boss.y);
                     game.boss.exploding = true;
@@ -24478,7 +25012,7 @@
             // Heal all enemies and boss to full health
             document.getElementById('sbHealEnemies').addEventListener('click', () => {
                 game.enemies.forEach(e => { e.health = e.maxHealth || e.health; });
-                if (game.boss && !game.boss.exploding) {
+                if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase) {
                     game.boss.health = game.boss.maxHealth;
                     document.getElementById('bossHealthFill').style.width = '100%';
                 }
@@ -24922,6 +25456,8 @@
                 if (e.lastPatternChange) e.lastPatternChange += pausedMs;
                 if (e.lastSpawn) e.lastSpawn += pausedMs;
                 if (e.spawnTime) e.spawnTime += pausedMs;
+                if (e.vgPortalTimer) e.vgPortalTimer += pausedMs;
+                if (e.platformTimers) for (let pi = 0; pi < e.platformTimers.length; pi++) e.platformTimers[pi] += pausedMs;
             });
             const b = game.boss;
             if (b) {
@@ -24930,7 +25466,24 @@
                 if (b.lastComplexAttack) b.lastComplexAttack += pausedMs;
                 if (b.lastClusterBomb) b.lastClusterBomb += pausedMs;
                 if (b.lastLaserBomb) b.lastLaserBomb += pausedMs;
+                // Gatekeeper special-attack deadlines (all wall-clock)
+                if (b.nextVoidLightningTime) b.nextVoidLightningTime += pausedMs;
+                if (b.lastLaser) b.lastLaser += pausedMs;
+                if (b.lastCluster) b.lastCluster += pausedMs;
+                if (b.lastTeleportBurst) b.lastTeleportBurst += pausedMs;
+                if (b.lastOrbital) b.lastOrbital += pausedMs;
+                if (b.lastMegaBurst) b.lastMegaBurst += pausedMs;
+                if (b.lastSpecial) b.lastSpecial += pausedMs; // special-attack chain arbiter
+                // Machine rest period between patterns
+                if (b.nextAttackTime) b.nextAttackTime += pausedMs;
             }
+            // Void Generator portals + Gatekeeper void portals fire on wall-clock schedules
+            if (game.generatorPortals) game.generatorPortals.forEach(p => {
+                if (p.spawnTimer) p.spawnTimer += pausedMs;
+            });
+            if (game.voidPortals) game.voidPortals.forEach(p => {
+                if (p.nextFireTime) p.nextFireTime += pausedMs;
+            });
             if (game.lastEnemySpawn) game.lastEnemySpawn += pausedMs;
             // Don't let an active slowdown tick away while the game is paused
             if (game.slowEffectActive && game.slowEffectEnd) game.slowEffectEnd += pausedMs;
@@ -25315,7 +25868,21 @@
             });
         }
 
+        // Resilience wrapper: an uncaught exception inside a frame used to kill the
+        // requestAnimationFrame chain and hard-freeze the game. Log it, restore the
+        // canvas state stack, skip the frame, and keep running.
         function gameLoop() {
+            try {
+                gameLoopFrame();
+            } catch (frameErr) {
+                console.error('Frame error (recovered, frame skipped):', frameErr);
+                // Unwind any ctx.save() left dangling by the aborted frame
+                try { for (let s = 0; s < 20; s++) ctx.restore(); } catch (e) {}
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function gameLoopFrame() {
             const now = performance.now();
 
             // Initialize timing on first run
@@ -26657,10 +27224,10 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
                 // Title
-                fitText('BOSS GUIDE', canvas.width / 2, 80, canvas.width - 220, 'bold 48px Arial', '#ff0000');
+                fitText('BOSS GUIDE', canvas.width / 2, 70, canvas.width - 220, 'bold 48px Arial', '#ff0000');
 
                 // Difficulty note
-                fitText('Difficulty Multipliers: Easy 50% | Medium 75% | Hard 100%', canvas.width / 2, 105, canvas.width - 80, '14px Arial', '#ffff00');
+                fitText('Difficulty Multipliers: Easy 50% | Medium 75% | Hard 100%', canvas.width / 2, 95, canvas.width - 80, '14px Arial', '#ffff00');
                 
                 // Back button
                 drawBackButton();
@@ -27609,13 +28176,165 @@
                     ctx.font = '18px Arial';
                     ctx.textAlign = 'center';
                     ctx.fillText('←', leftArrowX + 20, leftArrowY + 25);
+
+                    // Right arrow to next page (The Gatekeeper - secret boss)
+                    const rightArrowX = canvas.width - 100;
+                    const rightArrowY = canvas.height / 2 - 20;
+                    ctx.fillStyle = '#666666';
+                    ctx.fillRect(rightArrowX, rightArrowY, 40, 40);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(rightArrowX, rightArrowY, 40, 40);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '18px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('→', rightArrowX + 20, rightArrowY + 25);
+
+                } else if (game.bossGuidePage === 6) {
+                    // The Gatekeeper page (secret boss)
+                    ctx.save();
+                    ctx.translate(canvas.width / 2, 255);
+                    ctx.scale(0.55, 0.55);
+                    const gkTime = Date.now() * 0.001;
+
+                    // Outer void aura
+                    const gkAura = ctx.createRadialGradient(0, 0, 40, 0, 0, 185);
+                    gkAura.addColorStop(0, 'rgba(120, 0, 200, 0.5)');
+                    gkAura.addColorStop(1, 'rgba(40, 0, 80, 0)');
+                    ctx.fillStyle = gkAura;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 185, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Rotating spike ring
+                    ctx.fillStyle = '#2a0845';
+                    for (let s = 0; s < 10; s++) {
+                        ctx.save();
+                        ctx.rotate((s / 10) * Math.PI * 2 + gkTime * 0.4);
+                        ctx.beginPath();
+                        ctx.moveTo(-14, -88);
+                        ctx.lineTo(0, -150);
+                        ctx.lineTo(14, -88);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.restore();
+                    }
+
+                    // Main body
+                    ctx.fillStyle = '#1a0530';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 92, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#8833cc';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+
+                    // Absorbed tech fragments
+                    ctx.fillStyle = '#334455';
+                    ctx.fillRect(-70, -25, 22, 12);
+                    ctx.fillRect(45, 15, 26, 10);
+                    ctx.fillRect(-20, 55, 18, 14);
+
+                    // Void core
+                    ctx.fillStyle = '#000000';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 46, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#aa33ff';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 28, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#ddaaff';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Orbiting void orbs
+                    ctx.fillStyle = '#cc66ff';
+                    for (let o = 0; o < 4; o++) {
+                        const oa = gkTime * 1.2 + o * Math.PI / 2;
+                        ctx.beginPath();
+                        ctx.arc(Math.cos(oa) * 125, Math.sin(oa) * 55, 9, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    ctx.restore();
+
+                    ctx.fillStyle = '#cc66ff';
+                    ctx.font = 'bold 26px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('The Gatekeeper', canvas.width / 2, 130);
+                    ctx.fillStyle = '#cc66ff';
+                    ctx.font = '14px Arial';
+                    ctx.fillText('[ Void Corrupted | Multiple Dimensions ]', canvas.width / 2, 148);
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.font = 'bold 15px Arial';
+                    ctx.fillText('✦ SECRET BOSS ✦', canvas.width / 2, 167);
+
+                    // Boss information
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '18px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Health: 60,000 HP', canvas.width / 2, 380);
+                    ctx.fillText('Score Value: 1000 points', canvas.width / 2, 400);
+
+                    ctx.fillText('The true master of the Void, waiting beyond the Machine Of The Void', canvas.width / 2, 422);
+
+                    // Phase information
+                    ctx.fillStyle = '#ffff00';
+                    ctx.font = 'bold 20px Arial';
+                    ctx.fillText('Combat Phases:', canvas.width / 2, 444);
+
+                    ctx.fillStyle = '#00ff00';
+                    ctx.font = '16px Arial';
+                    ctx.fillText('Phases 1-3 (100%-55% HP): Void volleys, lightning storms + laser sweeps', canvas.width / 2, 464);
+
+                    ctx.fillStyle = '#ff6600';
+                    ctx.fillText('Phases 4-5 (55%-25% HP): Teleport bursts, cluster bombs + orbital rings', canvas.width / 2, 481);
+
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillText('Phases 6-7 (25%-0% HP): Boss teleports, mega bursts + lingering void zones', canvas.width / 2, 498);
+
+                    ctx.fillStyle = '#cc66ff';
+                    ctx.font = 'bold 15px Arial';
+                    ctx.fillText('Special: Void portals rain lightning - attacks chain faster with every phase', canvas.width / 2, 518);
+
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.font = 'bold 15px Arial';
+                    ctx.fillText('The final, final battle - defeat it to seal the Void forever!', canvas.width / 2, 537);
+
+                    // Attacks button
+                    const attacksButtonX = 70;
+                    const attacksButtonY = 40 + canvas.height / 6;
+                    ctx.fillStyle = '#444444';
+                    ctx.fillRect(attacksButtonX, attacksButtonY, 120, 30);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(attacksButtonX, attacksButtonY, 120, 30);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('ATTACKS', attacksButtonX + 60, attacksButtonY + 20);
+
+                    // Left arrow to previous page
+                    const leftArrowX = 60;
+                    const leftArrowY = canvas.height / 2 - 20;
+                    ctx.fillStyle = '#666666';
+                    ctx.fillRect(leftArrowX, leftArrowY, 40, 40);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(leftArrowX, leftArrowY, 40, 40);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '18px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('←', leftArrowX + 20, leftArrowY + 25);
                 }
-                
+
                 // Page indicator
                 ctx.fillStyle = '#aaaaaa';
                 ctx.font = '16px Arial';
                 ctx.textAlign = 'center';
-                fitText(`Page ${game.bossGuidePage + 1} of 6`, canvas.width / 2, canvas.height - 30, canvas.width - 100, '16px Arial', '#aaaaaa');
+                fitText(`Page ${game.bossGuidePage + 1} of 7`, canvas.width / 2, canvas.height - 30, canvas.width - 100, '16px Arial', '#aaaaaa');
                 
                 requestAnimationFrame(gameLoop);
                 return;
@@ -27992,6 +28711,70 @@
                     ctx.fillText('• Requires mastery of all evasion techniques', leftCol + 20, currentY + 45);
                     ctx.fillText('• Progressive corruption makes fight increasingly difficult', leftCol + 20, currentY + 65);
                     ctx.fillText('• Victory brings conclusion to the void invasion!', leftCol + 20, currentY + 85);
+
+                } else if (game.bossAttacksPage === 6) {
+                    // The Gatekeeper attacks (secret boss)
+                    ctx.fillStyle = '#cc66ff';
+                    ctx.font = 'bold 36px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('The Gatekeeper Attacks', canvas.width / 2, 150 - game.bossAttacksScroll);
+
+                    // Attack list
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '20px Arial';
+                    ctx.textAlign = 'left';
+                    const leftCol = 100;
+                    let currentY = 200 - game.bossAttacksScroll;
+
+                    ctx.fillText('VOID PATTERN BARRAGE:', leftCol, currentY);
+                    ctx.font = '16px Arial';
+                    ctx.fillText('• Damage: 34-70 per bullet (scales with phase)', leftCol + 20, currentY + 25);
+                    ctx.fillText('• Pattern: Cycles 8 patterns - fans, rings, spirals, walls and aimed volleys', leftCol + 20, currentY + 45);
+                    ctx.fillText('• Speed: Fire rate ramps from 1 volley/sec to 3.5 volleys/sec by phase 7', leftCol + 20, currentY + 65);
+
+                    currentY += 100;
+                    ctx.font = '20px Arial';
+                    ctx.fillText('VOID LIGHTNING:', leftCol, currentY);
+                    ctx.font = '16px Arial';
+                    ctx.fillText('• Damage: 35-77 per bolt (scales with phase)', leftCol + 20, currentY + 25);
+                    ctx.fillText('• Pattern: Ghost warning flickers on the bolt path, then the strike fires', leftCol + 20, currentY + 45);
+                    ctx.fillText('• Special: Void portals also rain lightning; phase 7 bolts leave linger zones', leftCol + 20, currentY + 65);
+
+                    currentY += 100;
+                    ctx.font = '20px Arial';
+                    ctx.fillText('LASER SWEEP:', leftCol, currentY);
+                    ctx.font = '16px Arial';
+                    ctx.fillText('• Damage: Heavy beam damage per sweep', leftCol + 20, currentY + 25);
+                    ctx.fillText('• Pattern: Charges, then fires angled laser beams toward your position', leftCol + 20, currentY + 45);
+                    ctx.fillText('• Speed: Beams fan wider in later phases', leftCol + 20, currentY + 65);
+
+                    currentY += 100;
+                    ctx.font = '20px Arial';
+                    ctx.fillText('TELEPORT BURST & CLUSTER BOMBS:', leftCol, currentY);
+                    ctx.font = '16px Arial';
+                    ctx.fillText('• Teleport burst: bullets blink out and re-emerge closer to you', leftCol + 20, currentY + 25);
+                    ctx.fillText('• Cluster bombs: drift down and detonate into bullet rings', leftCol + 20, currentY + 45);
+                    ctx.fillText('• Laser bombs: explode into crossing beam lines after a short fuse', leftCol + 20, currentY + 65);
+
+                    currentY += 100;
+                    ctx.font = '20px Arial';
+                    ctx.fillStyle = '#ff8800';
+                    ctx.fillText('PHASE 5+: ORBITAL RINGS & BOSS TELEPORT:', leftCol, currentY);
+                    ctx.font = '16px Arial';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText('• Orbital rings: 60-68 damage void orbs circle outward from the boss', leftCol + 20, currentY + 25);
+                    ctx.fillText('• The Gatekeeper itself teleports around the arena with a brief warning', leftCol + 20, currentY + 45);
+                    ctx.fillText('• Phase 6+: Mega burst - a massive radial explosion of void bullets', leftCol + 20, currentY + 65);
+
+                    currentY += 100;
+                    ctx.font = '20px Arial';
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillText('SECRET BOSS WARNING:', leftCol, currentY);
+                    ctx.font = '16px Arial';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText('• Seven phases - every phase adds attacks and speeds everything up', leftCol + 20, currentY + 25);
+                    ctx.fillText('• Special attacks chain one after another with shrinking gaps', leftCol + 20, currentY + 45);
+                    ctx.fillText('• The final, final battle - defeat it to seal the Void forever!', leftCol + 20, currentY + 65);
                 }
                 
                 // Scroll indicator
@@ -28056,8 +28839,22 @@
                     { type: 'warship',          name: 'Defender Warship',      classification: 'Defender',        dimension: null,               desc: 'Defender fleet carrier - 3750 HP, 650 points - Slowly descends launching continuous waves of Fighter Jets from 18 bay ports. Has no direct weapons of its own.', color: '#4455aa' },
                     { type: 'fighter_jet',           name: 'Defender Fighter Jet',    classification: 'Defender',        dimension: null,               desc: 'Defender carrier jet - 20 HP, 15 points - Launched from Defender Warship bays. Ejects sideways then dives nose-first at the player in a fast kamikaze run.', color: '#dd3322' },
                     { type: 'defender_stealth_fighter', name: 'Defender Stealth Fighter', classification: 'Defender',        dimension: null,               desc: 'Cloaked red/yellow fighter - 80 HP, 45 points - Invisible, briefly flashes to reveal position. Fires 2-3 regular++ bullets that intensify in glow and damage with distance, becoming flame/drain bullets mid-flight. Hit it to expose it.', color: '#cc6622' },
-                    { type: 'missile_launcher',         name: 'Missile Launcher',          classification: 'Defender',        dimension: null,               desc: 'Heavy Defender warship - 500 HP, 180 points - Six independently-timed missile platforms fire guided missiles that track the player. Missiles explode into glass-shard shrapnel that deals damage within range.', color: '#cc3300' }
+                    { type: 'missile_launcher',         name: 'Missile Launcher',          classification: 'Defender',        dimension: null,               desc: 'Heavy Defender warship - 500 HP, 180 points - Six independently-timed missile platforms fire guided missiles that track the player. Missiles explode into glass-shard shrapnel that deals damage within range.', color: '#cc3300' },
+                    // Workshopping enemies — implemented for sandbox testing only, not yet in level spawn pools
+                    { type: 'aegis',                name: 'Aegis Phalanx',      classification: 'Controlled Human', dimension: null, workshopping: true, desc: '90 HP, 40 points - Frontal arc shield blocks all fire from below. Cycles 3s shielded / 1.5s vented - strike the glowing core while it vents.', color: '#ff9933' },
+                    { type: 'minelayer',            name: 'Minelayer',          classification: 'Controlled Human', dimension: null, workshopping: true, desc: '70 HP, 35 points - Sweeps the top band laying proximity mines that burst into a 6-bullet ring. Kill it fast and stay clear of the mines.', color: '#ffaa44' },
+                    { type: 'breacher',             name: 'Breacher',           classification: 'Controlled Human', dimension: null, workshopping: true, desc: '55 HP, 30 points - Shakes and glows red, then ram-dashes at your locked position. Move during the windup and it always misses.', color: '#ff7744' },
+                    { type: 'void_phantom',         name: 'Void Phantom',       classification: 'Void Corrupted',  dimension: null, workshopping: true, desc: '45 HP, 35 points - Phases in and out of reality. Bullets pass through it while phased; it fires a 3-bullet aimed fan when it materialises.', color: '#aa66ee' },
+                    { type: 'void_leech',           name: 'Void Leech',         classification: 'Void Corrupted',  dimension: null, workshopping: true, desc: '80 HP, 45 points - Launches slow homing orbs that drain your health over time and heal it 30 HP per hit. A priority target.', color: '#bb55cc' },
+                    { type: 'void_splitter',        name: 'Void Splitter',      classification: 'Void Corrupted',  dimension: null, workshopping: true, desc: '100 HP, 30 points - Wobbling blob that splits into 2 fast splitterlings when shot down. Ramming it does not trigger the split.', color: '#9955bb' },
+                    { type: 'defender_railgunner',  name: 'Railgun Lancer',     classification: 'Defender',        dimension: null, workshopping: true, desc: '85 HP, 50 points - Aligns with your column, then fires a full-screen vertical railgun. Sidestep the dashed warning line and punish it.', color: '#ee3333' },
+                    { type: 'defender_ace',         name: 'Ace Interceptor',    classification: 'Defender',        dimension: null, workshopping: true, desc: '60 HP, 45 points - Dodges incoming bullets with fast afterburner sidesteps. Use spread fire, tracking bullets, or bait the dodge.', color: '#ff4422' },
+                    { type: 'defender_bomber',      name: 'Skyfall Bomber',     classification: 'Defender',        dimension: null, workshopping: true, desc: '120 HP, 55 points - Lobs flak shells that detonate at the altitude you occupied at launch, bursting into a 4-fragment X. Keep changing height.', color: '#cc3344' },
+                    { type: 'void_rift',            name: 'Void Rift',          classification: 'Void Pure',       dimension: null, workshopping: true, desc: '140 HP, 60 points - Near-stationary tear in space that pulls you toward it and emits rotating void rings. The pull is always escapable.', color: '#9933ff' },
+                    { type: 'void_conduit',         name: 'Void Conduits',      classification: 'Void Pure',       dimension: null, workshopping: true, desc: '65 HP each, 40 points each - Linked pair with a damaging void beam strung between them. Killing one drops the beam but enrages the survivor.', color: '#8822ee' },
+                    { type: 'void_echo',            name: 'Void Echo',          classification: 'Void Pure',       dimension: null, workshopping: true, desc: '75 HP, 45 points - A glitching void copy of your ship that mirrors your position from 1 second ago and fires only when you fire.', color: '#7744dd' }
                 ];
+                game._enemyGuideCount = enemies.length;
                 
                 const guideLayout = getEnemyGuideLayout(enemies.length);
                 game.enemyGuideScroll = Math.max(0, Math.min(guideLayout.maxScroll, game.enemyGuideScroll || 0));
@@ -28090,11 +28887,17 @@
                     const classColors = { 'Controlled Human': '#ff8800', 'Void Corrupted': '#9966cc', 'Defender': '#cc3333', 'Void Pure': '#6600cc' };
                     fitText('[' + enemy.classification + ']', x, y + 69, guideLayout.textWidth, '11px Arial', classColors[enemy.classification] || '#888888');
 
-                    // Foreign/Multi-dimension sub-label
+                    // Foreign/Multi-dimension sub-label + workshopping tag
+                    let tagY = y + 80;
                     let descStartY = y + 83;
                     if (enemy.dimension) {
-                        fitText('{' + enemy.dimension + '}', x, y + 80, guideLayout.textWidth, '10px Arial', '#cc88ff');
-                        descStartY = y + 93;
+                        fitText('{' + enemy.dimension + '}', x, tagY, guideLayout.textWidth, '10px Arial', '#cc88ff');
+                        tagY += 13;
+                        descStartY = tagY + 13;
+                    }
+                    if (enemy.workshopping) {
+                        fitText('[ WORKSHOPPING - WORK IN PROGRESS ]', x, tagY, guideLayout.textWidth, 'bold 10px Arial', '#ffcc44');
+                        descStartY = tagY + 13;
                     }
 
                     // Description with text wrapping
@@ -30304,7 +31107,7 @@
             // v59.3: dim the starfield/planets during boss fights so the boss's patterns
             // stand out exactly when the screen is busiest; fades in/out over ~0.5s
             {
-                const dimTarget = (game.boss && !game.boss.exploding && !game.boss.entering) ? 0.22 : 0;
+                const dimTarget = (game.boss && !game.boss.exploding && !game.boss.blackHolePhase && !game.boss.entering) ? 0.22 : 0;
                 if (game._bossDimAlpha === undefined) game._bossDimAlpha = 0;
                 const dimStep = 0.008 * (game.frameScale || 1);
                 if (game._bossDimAlpha < dimTarget) game._bossDimAlpha = Math.min(dimTarget, game._bossDimAlpha + dimStep);
@@ -34044,8 +34847,9 @@
                     let targetSlot = vars.findIndex(v => v === null);
                     if (targetSlot === -1) targetSlot = 0;
 
-                    // If overwriting an already-assigned slot, displace it to pool first
-                    if (vars[targetSlot] && prefs.approved === targetSlot) {
+                    // If overwriting an occupied slot (approved or not), displace its sound
+                    // to the pool first so nothing is silently lost when all 5 slots are full
+                    if (vars[targetSlot]) {
                         const num = this.nextUnassignedNum++;
                         const displaceId = `${cat}_u${num}`;
                         this.reservedSounds[displaceId] = {
@@ -34256,12 +35060,14 @@
                         this.unassignedSounds = this.unassignedSounds.filter(s => s !== soundName);
                         this.saveReservedSounds();
                     }
-                    // Check if it's currently the approved variation for some category
+                    // Check if it's currently the approved variation for some category.
+                    // Match only on the slot's own label — pool sounds (cat_u#) are
+                    // independent copies, so deleting one must not unassign the slot.
                     for (const cat of Object.keys(this.preferences)) {
                         const prefs = this.preferences[cat];
                         if (prefs && prefs.approved !== null) {
                             const v = (this.categoryVariations[cat] || [])[prefs.approved];
-                            if (v && (v.label === soundName || soundName.startsWith(cat + '_u'))) {
+                            if (v && v.label === soundName) {
                                 prefs.approved = null;
                                 this.savePreferences();
                             }
@@ -34362,7 +35168,9 @@
                     if (window._sfxListForTesting) {
                         for (const soundName of Object.keys(window._sfxListForTesting)) {
                             this.previewVolumes[soundName] = 100;
-                            if (!this.gameVolumes[soundName]) {
+                            // Strict undefined check — a saved volume of 0 (muted) is falsy
+                            // and must not be reset to 100 on reload
+                            if (this.gameVolumes[soundName] === undefined) {
                                 this.gameVolumes[soundName] = 100;
                             }
                         }

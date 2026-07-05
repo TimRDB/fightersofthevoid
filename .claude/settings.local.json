@@ -1,7 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Get-ChildItem \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\\\\assets\\\\\" -Recurse | Where-Object { $_.Length -gt 500000 } | Select-Object Name, @{Name=\"SizeMB\";Expression={[math]::Round\\($_.Length/1MB,2\\)}} | Sort-Object SizeMB -Descending | Select-Object -First 20)"
+      "PowerShell(Get-ChildItem \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\\\\assets\\\\\" -Recurse | Where-Object { $_.Length -gt 500000 } | Select-Object Name, @{Name=\"SizeMB\";Expression={[math]::Round\\($_.Length/1MB,2\\)}} | Sort-Object SizeMB -Descending | Select-Object -First 20)",
+      "Bash(node --check \"/c/Creative/The Void Series/Fighters Of The Void/Fighters Of The Void v59.html\")",
+      "Bash(node -e ' *)",
+      "Bash(node --input-type=script --check)",
+      "Bash(echo \"Exit: $?\")",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(mkdir -p \"/c/Users/TIMDIX~1/AppData/Local/Temp/claude/c--Creative-The-Void-Series-Fighters-Of-The-Void/94ea1cbc-c5a7-47b6-b5a7-b20db7b2b825/scratchpad/run\")",
+      "Read(//c/Users/TIMDIX~1/AppData/Local/Temp/claude/c--Creative-The-Void-Series-Fighters-Of-The-Void/94ea1cbc-c5a7-47b6-b5a7-b20db7b2b825/scratchpad/**)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\(require\\('playwright-core/package.json'\\).version\\)\")",
+      "Read(//c/Users/TIMDIX~1/AppData/Local/Temp/claude/c--Creative-The-Void-Series-Fighters-Of-The-Void/94ea1cbc-c5a7-47b6-b5a7-b20db7b2b825/scratchpad/run/**)",
+      "Bash(node drive.js)",
+      "Bash(node drive2.js)",
+      "Bash(node drive4.js)",
+      "Bash(node drive5.js)",
+      "Bash(sed -i \"s|await page.click\\('#sbFreezeWaves'\\);||\" drive6.js)",
+      "Bash(sed -i \"s|await page.waitForTimeout\\(4500\\);|for \\(let w = 0; w < 24; w++\\) { await page.waitForTimeout\\(500\\); if \\(await page.evaluate\\(\\(\\) => !!game.boss && !game.boss.entering\\)\\) break; } await page.waitForTimeout\\(3500\\);|\" drive6.js)",
+      "Bash(node drive6.js)"
     ]
   }
 }
