@@ -718,8 +718,21 @@
             bulletTaper:       false, // #13 Tapered player bullet shape (triangle tip)
             playerHitRing:     true,  // #14 Expanding ring on player when hit
             orbitronTitles:    true,  // #15 Orbitron font for in-canvas title/menu text
+            // v59.7 batch — set any flag to false to revert that improvement
+            enemySpriteV2:     true,  // #16 Redrawn classic enemy ships (basic/fast/heavy/zigzag/sniper/drone/elite + void swaps)
+            playerBanking:     true,  // #17 Player ship banks into strafes; engine trails flicker
+            directionalSparks: true,  // #18 Bullet-impact sparks spray back along the shot direction
+            enemyMuzzleFlash:  true,  // #19 Brief glow at enemy gun ports when they fire
+            enemyBanking:      true,  // #20 Enemies roll into lateral movement
+            bulletTrails:      true,  // #21 Subtle fading tail behind player bullets
+            bigKillFlash:      true,  // #22 Brief screen flash when a large enemy dies
         };
         
+        // v59.7b: canvas filter support (Chrome/Edge/Firefox). Silhouette-accurate
+        // hit flashes redraw the exact body art in white via ctx.filter; without
+        // support the old approximated flash shapes are used instead.
+        const CTX_FILTER_OK = typeof ctx.filter === 'string';
+
         // Per-session user preferences (changed via Options menu)
         const gameSettings = {
             scorePopups: false, // Score pop-ups default OFF — toggle in Options menu
@@ -846,6 +859,92 @@
                 ctx.restore();
             } catch (e) {
                 // ignore
+            }
+        }
+
+        // v59.7: game-time effect scheduler — drop-in replacement for setTimeout on
+        // staged gameplay effects/attacks (explosion waves, boss bullet volleys).
+        // Delays are given in ms for setTimeout call-site parity but advance on
+        // combinedFrameScale, so pause, slow-motion and frame rate all behave.
+        // Queue is cleared wherever game.particles is reset (restart/level/checkpoint).
+        function scheduleEffect(fn, delayMs = 0) {
+            if (!game.delayedEffects) game.delayedEffects = [];
+            game.delayedEffects.push({ frames: delayMs / (1000 / 60), fn });
+        }
+
+        function updateDelayedEffects() {
+            const list = game.delayedEffects;
+            if (!list || list.length === 0) return;
+            const fs = game.combinedFrameScale || game.frameScale || 1;
+            for (let i = 0; i < list.length; i++) list[i].frames -= fs;
+            // Reverse loop: callbacks may schedule new effects (appended past the
+            // start index, so they first tick next frame — same as nested setTimeout)
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (list[i].frames <= 0) {
+                    const fn = list[i].fn;
+                    list.splice(i, 1);
+                    try { fn(); } catch (e) { console.error('Delayed effect error:', e); }
+                }
+            }
+        }
+
+        // VISUAL #19 (v59.7): short-lived glow at the gun port whenever an enemy
+        // (or boss) fires — driven generically by watching game.enemyBullets grow
+        // across updateEnemies()/updateBoss(), so every ship type gets a flash
+        // from one hook instead of touching dozens of firing sites.
+        // v59.7b: deterministic per-frame randomness for draw code. Seeded by the
+        // pause-frozen drawNow clock plus a call counter that resets every frame,
+        // so shimmer/jitter effects animate normally while running but freeze
+        // perfectly during pause (draw-side Math.random kept animating when paused).
+        function drawRand() {
+            game._drawRandIdx = (game._drawRandIdx || 0) + 1;
+            const s = Math.sin(game._drawRandIdx * 12.9898 + (game.drawNow % 86400000) * 0.005) * 43758.5453;
+            return s - Math.floor(s);
+        }
+
+        function recordEnemyMuzzleFlashes(prevCount) {
+            if (!VISUAL_CONFIG.enemyMuzzleFlash) return;
+            if (!game.enemyMuzzleFlashes) game.enemyMuzzleFlashes = [];
+            const flashes = game.enemyMuzzleFlashes;
+            for (let i = prevCount; i < game.enemyBullets.length && flashes.length < 40; i++) {
+                const b = game.enemyBullets[i];
+                if (b.isLaser || b.isAdvancedLaser || b.isLaserPulse) continue; // beams have their own visuals
+                flashes.push({ x: b.x, y: b.y, life: 5, maxLife: 5 });
+            }
+        }
+
+        function updateEnemyMuzzleFlashes() {
+            const flashes = game.enemyMuzzleFlashes;
+            if (!flashes || flashes.length === 0) return;
+            const fs = game.combinedFrameScale || 1;
+            for (let i = flashes.length - 1; i >= 0; i--) {
+                flashes[i].life -= fs;
+                if (flashes[i].life <= 0) flashes.splice(i, 1);
+            }
+        }
+
+        // VISUAL #20 (v59.7): small fighters roll into lateral movement. Bank is
+        // derived from the actual per-frame x displacement, so every movement
+        // pattern (zigzag weave, dreadnought ejection slides, defender strafes)
+        // banks correctly without touching any movement code.
+        const ENEMY_BANK_TYPES = new Set([
+            'basic', 'void_normal', 'fast', 'zigzag', 'sniper', 'void_sniper',
+            'drone', 'void_drone', 'void_soldier',
+            'defender_normal', 'defender_fast', 'defender_zigzag'
+        ]);
+        function updateEnemyBanking() {
+            if (!VISUAL_CONFIG.enemyBanking) return;
+            const fs = game.combinedFrameScale || 1;
+            const blend = Math.min(1, 0.22 * fs);
+            for (let i = 0; i < game.enemies.length; i++) {
+                const e = game.enemies[i];
+                if (!ENEMY_BANK_TYPES.has(e.type)) continue;
+                const dx = (e._bankPrevX === undefined) ? 0 : e.x - e._bankPrevX;
+                e._bankPrevX = e.x;
+                // dx normalised by frame scale ≈ px per 60fps frame; clamp the roll
+                const target = Math.max(-0.3, Math.min(0.3, (dx / fs) * 0.09));
+                e.bank = (e.bank || 0) + (target - (e.bank || 0)) * blend;
+                if (target === 0 && Math.abs(e.bank) < 0.01) e.bank = 0;
             }
         }
 
@@ -1041,6 +1140,7 @@
             voidProtectorShields: [], // Active shields from Void Protector enemies
             powerups: [],
             particles: [],
+            delayedEffects: [], // v59.7: game-time staged effects (replaces gameplay setTimeout)
             blackHoles: [],
             damageNumbers: [], // Damage number display system
             boss: null,
@@ -1052,6 +1152,7 @@
             lastEnemySpawn: 0,
             paused: false,
             pPaused: false, // P key pause - no overlay
+            drawNow: Date.now(), // v59.7b: draw-side animation clock — frozen while paused
             victory: false,
             victoryTimer: 0,
             gameStarted: false,
@@ -2966,7 +3067,7 @@
 
                     // Double-tap Space toggles continuous fire mode
                     if (normalizedKey === ' ' && !e.repeat && game.gameStarted) {
-                        const now = Date.now();
+                        const now = Date.now(); // input timing — wall clock, not the draw clock
                         if (now - game.lastSpacePress < 200) {
                             game.continuousFire = !game.continuousFire;
                             game.lastSpacePress = 0; // reset so a third tap starts fresh
@@ -3085,7 +3186,7 @@
             game.enemyBullets = [];
             game.asteroids = [];
             game.powerups = [];
-            game.particles = [];
+            game.particles = []; game.delayedEffects = [];
             game.shockwaves = [];
             game.bulletEraseRings = [];
             game.explosionFlashes = [];
@@ -3096,7 +3197,8 @@
             game.enemyShrapnel = [];
             game.generatorPortals = [];
             game.bossWarnings = [];
-            game.scorePopups = []; // VISUAL #11
+            game.scorePopups = [];
+            game.enemyMuzzleFlashes = []; // VISUAL #11
             game.lances = [];
             game.planets = [];
             
@@ -3385,7 +3487,7 @@
                         game.enemyBullets = [];
                         game.asteroids = [];
                         game.powerups = [];
-                        game.particles = [];
+                        game.particles = []; game.delayedEffects = [];
                         game.blackHoles = [];
                         game.boss = null;
                         game.bossCharges = [];
@@ -3489,7 +3591,7 @@
                         game.bullets = [];
                         game.enemyBullets = [];
                         game.powerups = [];
-                        game.particles = [];
+                        game.particles = []; game.delayedEffects = [];
                         game.boss = null;
                         game.bossCharges = [];
                         game.playerShrapnel = [];
@@ -3581,7 +3683,7 @@
                         game.bullets = [];
                         game.enemyBullets = [];
                         game.powerups = [];
-                        game.particles = [];
+                        game.particles = []; game.delayedEffects = [];
                         game.boss = null;
                         game.bossCharges = [];
                         game.playerShrapnel = [];
@@ -4149,7 +4251,7 @@
                 ctx.fillRect(-4, -6, 8, 12);
             };
             const drawVoidGlow = (r) => {
-                const pulse = Math.sin(Date.now() * 0.006) * 0.2 + 0.45;
+                const pulse = Math.sin(game.drawNow * 0.006) * 0.2 + 0.45;
                 ctx.strokeStyle = `rgba(180, 80, 255, ${pulse})`;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
@@ -4670,6 +4772,21 @@
             if (player.hitTimer > 0) {
                 player.hitTimer -= frameScale;
             }
+            // v59.7: muzzle flash countdown moved here from drawPlayer (state was
+            // mutated in draw and ticked per-frame instead of per-frameScale)
+            if (player.muzzleFlash > 0) {
+                player.muzzleFlash -= frameScale;
+            }
+
+            // VISUAL #17 (v59.7): bank angle eases toward the strafe direction
+            if (VISUAL_CONFIG.playerBanking) {
+                const bankLeft = game.keys['a'] || game.keys['arrowleft'];
+                const bankRight = game.keys['d'] || game.keys['arrowright'];
+                const bankTarget = bankRight ? 0.16 : bankLeft ? -0.16 : 0;
+                player.bank = player.bank || 0;
+                player.bank += (bankTarget - player.bank) * Math.min(1, 0.18 * frameScale);
+                if (!bankTarget && Math.abs(player.bank) < 0.004) player.bank = 0;
+            }
             
             // Update teleported bullet hit cooldown
             if (player.teleportHitCooldown > 0) {
@@ -4927,7 +5044,7 @@
                     const flashSize = (Math.sin(game.playerExplosionTimer * 0.8 + i * 2) * 0.5 + 0.5) * explosionSize * explosionProgress;
                     
                     // Bright, fiery explosion colors
-                    const explosionColor = `rgba(255, ${150 + Math.floor(Math.random() * 105)}, 0, ${0.9 * (1 - explosionProgress)})`;
+                    const explosionColor = `rgba(255, ${150 + Math.floor(drawRand() * 105)}, 0, ${0.9 * (1 - explosionProgress)})`;
                     
                     // Main explosion flash
                     ctx.fillStyle = explosionColor;
@@ -4955,6 +5072,14 @@
                 ctx.globalAlpha = fadeAlpha;
                 ctx.translate(player.x + shake, player.y + shake);
                 ctx.rotate(rotationShake);
+                ctx.translate(-player.x, -player.y);
+            }
+            // VISUAL #17 (v59.7): roll the ship rendering into strafes
+            const bankAngle = (VISUAL_CONFIG.playerBanking && player.bank) ? player.bank : 0;
+            if (bankAngle) {
+                ctx.save();
+                ctx.translate(player.x, player.y);
+                ctx.rotate(bankAngle);
                 ctx.translate(-player.x, -player.y);
             }
             const isHit = player.hitTimer > 0;
@@ -5117,7 +5242,11 @@
             }
             
             // Engine trails (always visible, more intense when moving up)
-            const engineIntensity = (game.keys['w'] || game.keys['arrowup']) ? 1 : 0.6;
+            // VISUAL #17 (v59.7): deterministic two-sine flame flicker (draw-only)
+            const engineFlick = VISUAL_CONFIG.playerBanking
+                ? 0.9 + Math.sin((game.gameTime || 0) * 0.045) * 0.06 + Math.sin((game.gameTime || 0) * 0.013 + 2.1) * 0.04
+                : 1;
+            const engineIntensity = ((game.keys['w'] || game.keys['arrowup']) ? 1 : 0.6) * engineFlick;
             const trailLength = 20 * engineIntensity;
             
             // Left engine
@@ -5263,21 +5392,23 @@
                 ctx.fillStyle = fg;
                 ctx.beginPath(); ctx.arc(player.x, player.y - 19, 9, 0, Math.PI * 2); ctx.fill();
                 ctx.restore();
-                player.muzzleFlash--;
             }
-            
+
+            // VISUAL #17: pop the bank rotation (before the explosion block's restore)
+            if (bankAngle) ctx.restore();
+
             // Finish player explosion effect
             if (game.playerExploding) {
                 // Enhanced sparks and debris
                 const sparkCount = 12;
                 for (let i = 0; i < sparkCount; i++) {
-                    const sparkX = player.x + (Math.random() - 0.5) * player.width * 2;
-                    const sparkY = player.y + (Math.random() - 0.5) * player.height * 2;
-                    const sparkSize = Math.random() * 5 + 2;
+                    const sparkX = player.x + (drawRand() - 0.5) * player.width * 2;
+                    const sparkY = player.y + (drawRand() - 0.5) * player.height * 2;
+                    const sparkSize = drawRand() * 5 + 2;
                     
                     // Mix of fiery and electric colors
                     const sparkColors = ['#ff4400', '#ffaa00', '#ffffff', '#0088ff', '#ff0088'];
-                    const sparkColor = sparkColors[Math.floor(Math.random() * sparkColors.length)];
+                    const sparkColor = sparkColors[Math.floor(drawRand() * sparkColors.length)];
                     
                     ctx.fillStyle = sparkColor;
                     ctx.fillRect(sparkX, sparkY, sparkSize, sparkSize);
@@ -5603,7 +5734,7 @@
                 type: enemyType,
                 zigzagTime: Math.random() * Math.PI * 2,
                 droneErraticTimer: Math.floor(Math.random() * 30),
-                lastSpawn: enemyType === 'dreadnought' ? Date.now() - Math.floor(Math.random() * 4000) : 0,
+                spawnCooldown: enemyType === 'dreadnought' ? Math.random() * 240 : 0, // v59.7: game-time frames (staggered first wave)
                 // Void soldier specific initialization
                 teleportCooldown: 0,
                 canTeleport: true,
@@ -5899,7 +6030,7 @@
                 type: type,
                 zigzagTime: Math.random() * Math.PI * 2,
                 droneErraticTimer: Math.floor(Math.random() * 30),
-                lastSpawn: type === 'dreadnought' ? Date.now() - Math.floor(Math.random() * 4000) : 0,
+                spawnCooldown: type === 'dreadnought' ? Math.random() * 240 : 0, // v59.7: game-time frames (staggered first wave)
                 teleportCooldown: 0,
                 canTeleport: true,
                 specialVariant: false,
@@ -6424,7 +6555,11 @@
                     }
                 } else if (enemy.type === 'dreadnought' || enemy.type === 'void_dreadnought') {
                     // Dreadnought spawns fighters and drones from its sides
-                    if (Date.now() - enemy.lastSpawn > enemy.spawnRate) {
+                    // v59.7: game-time cooldown (was Date.now-based — didn't respect slow-motion)
+                    if (enemy.spawnCooldown === undefined) enemy.spawnCooldown = 0;
+                    enemy.spawnCooldown -= game.combinedFrameScale || 1;
+                    if (enemy.spawnCooldown <= 0) {
+                        enemy.spawnCooldown = (enemy.spawnRate || 4000) / (1000 / 60);
                         // Variable spawn distance (50-120 pixels from sides, both spawn at same distance)
                         const spawnDistance = 50 + Math.random() * 70;
                         
@@ -6484,8 +6619,6 @@
                             horizontalSpeed: 8 // Fast initial horizontal ejection to the right
                         };
                         game.enemies.push(rightSpawn);
-                        
-                        enemy.lastSpawn = Date.now();
                     }
                 }
                 
@@ -7567,7 +7700,7 @@
                         const speed = 4.5;
                         
                         for (let i = 0; i < 3; i++) {
-                            setTimeout(() => {
+                            scheduleEffect(() => {
                                 if (game.enemies.includes(enemy)) {
                                     game.enemyBullets.push({
                                         x: enemy.x,
@@ -8215,7 +8348,7 @@
                         const dy = game.player.y - enemy.y;
                         const base = Math.atan2(dy, dx);
                         for (let s = 0; s < 3; s++) {
-                            setTimeout(() => {
+                            scheduleEffect(() => {
                                 if (!game.enemies.includes(enemy)) return;
                                 game.enemyBullets.push({
                                     x: enemy.x, y: enemy.y + enemy.height/2,
@@ -8443,7 +8576,7 @@
             }
             // Cluster bullet ring — fewer than Mark III (6 bullets per cluster, 2 clusters)
             for (let cluster = 0; cluster < 2; cluster++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     const count = 6;
                     for (let i = 0; i < count; i++) {
                         const ang = (i/count)*Math.PI*2 + cluster*0.52;
@@ -8490,7 +8623,7 @@
                     if (enemy.shieldUp) {
                         ctx.fillStyle = '#883300';
                         ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
-                        const shA = 0.55 + Math.sin(Date.now() * 0.008) * 0.15;
+                        const shA = 0.55 + Math.sin(game.drawNow * 0.008) * 0.15;
                         ctx.strokeStyle = `rgba(255, 200, 90, ${shA})`;
                         ctx.lineWidth = 3;
                         ctx.beginPath();
@@ -8503,7 +8636,7 @@
                         ctx.stroke();
                     } else {
                         // Vented: exposed glowing core = vulnerable cue
-                        const ventPulse = 0.6 + Math.sin(Date.now() * 0.02) * 0.4;
+                        const ventPulse = 0.6 + Math.sin(game.drawNow * 0.02) * 0.4;
                         ctx.fillStyle = `rgba(255, 220, 120, ${ventPulse})`;
                         ctx.beginPath(); ctx.arc(ex, ey, 6, 0, Math.PI * 2); ctx.fill();
                     }
@@ -8523,7 +8656,7 @@
                         ctx.fillRect(ex - 14 + s * 7, ey + 2, 7, 4);
                     }
                     // Mine bay light
-                    const bayBlink = Math.sin(Date.now() * 0.012) > 0;
+                    const bayBlink = Math.sin(game.drawNow * 0.012) > 0;
                     ctx.fillStyle = bayBlink ? '#ff5500' : '#662200';
                     ctx.beginPath(); ctx.arc(ex, ey + 9, 3, 0, Math.PI * 2); ctx.fill();
                     return true;
@@ -8548,7 +8681,7 @@
                     ctx.closePath();
                     ctx.fill();
                     if (winding || dashing) {
-                        const noseA = winding ? (0.5 + Math.sin(Date.now() * 0.03) * 0.5) : 0.9;
+                        const noseA = winding ? (0.5 + Math.sin(game.drawNow * 0.03) * 0.5) : 0.9;
                         ctx.fillStyle = `rgba(255, ${winding ? 60 : 160}, 40, ${noseA})`;
                         ctx.beginPath(); ctx.arc(ex, ey + 14 * stretch, 4.5, 0, Math.PI * 2); ctx.fill();
                     }
@@ -8603,7 +8736,7 @@
                 }
                 case 'void_splitter': {
                     // Wobbling blob with two visible inner cores (hinting at the split)
-                    const wob = Math.sin(Date.now() * 0.006) * 2;
+                    const wob = Math.sin(game.drawNow * 0.006) * 2;
                     ctx.fillStyle = '#663388';
                     ctx.beginPath(); ctx.ellipse(ex, ey, 18 + wob, 18 - wob, 0, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = '#9955bb';
@@ -8634,7 +8767,7 @@
                     const charging = enemy.rgPhase === 'lock';
                     const firing = enemy.rgPhase === 'fire' && enemy.rgTimer > 40;
                     if (charging || firing) {
-                        const chA = firing ? 1 : (0.4 + Math.sin(Date.now() * 0.04) * 0.4);
+                        const chA = firing ? 1 : (0.4 + Math.sin(game.drawNow * 0.04) * 0.4);
                         ctx.fillStyle = `rgba(255, ${firing ? 230 : 120}, 90, ${chA})`;
                         ctx.beginPath(); ctx.arc(ex, ey + 20, firing ? 6 : 4, 0, Math.PI * 2); ctx.fill();
                     }
@@ -8681,7 +8814,7 @@
                     ctx.fillRect(ex - 24, ey - 6, 5, 12);
                     ctx.fillRect(ex + 19, ey - 6, 5, 12);
                     // Bomb-bay slit
-                    const bayA = 0.45 + Math.sin(Date.now() * 0.01) * 0.3;
+                    const bayA = 0.45 + Math.sin(game.drawNow * 0.01) * 0.3;
                     ctx.fillStyle = `rgba(255, 140, 60, ${bayA})`;
                     ctx.fillRect(ex - 8, ey + 9, 16, 3);
                     return true;
@@ -8724,7 +8857,7 @@
                     // Beam between paired nodes (drawn by the primary only)
                     if (enemy.cdPrimary && enemy.cdPartner && game.enemies.includes(enemy.cdPartner)) {
                         const pb = enemy.cdPartner;
-                        const beamPulse = 0.5 + Math.sin(Date.now() * 0.015) * 0.25;
+                        const beamPulse = 0.5 + Math.sin(game.drawNow * 0.015) * 0.25;
                         ctx.save();
                         ctx.strokeStyle = `rgba(150, 60, 255, ${beamPulse})`;
                         ctx.lineWidth = 7;
@@ -8758,8 +8891,8 @@
                     // heavy static + dimming while destabilised (overheated)
                     ctx.save();
                     const stunned = enemy.echoStun > 0;
-                    ctx.globalAlpha *= stunned ? (0.35 + Math.random() * 0.25) : 0.8;
-                    const glitch = Math.random() < (stunned ? 0.5 : 0.06) ? (Math.random() - 0.5) * (stunned ? 9 : 5) : 0;
+                    ctx.globalAlpha *= stunned ? (0.35 + drawRand() * 0.25) : 0.8;
+                    const glitch = drawRand() < (stunned ? 0.5 : 0.06) ? (drawRand() - 0.5) * (stunned ? 9 : 5) : 0;
                     ctx.fillStyle = '#442277';
                     ctx.beginPath();
                     ctx.moveTo(ex + glitch, ey + 14);
@@ -8784,118 +8917,298 @@
             return false;
         }
 
-        function drawEnemies() {
-            // Cache a Path2D for the 'fast' enemy shape to avoid re-creating paths
-            if (!drawEnemies.fastPath) {
-                const p = new Path2D();
-                p.moveTo(0, 10);
-                p.lineTo(-10, -10);
-                p.lineTo(10, -10);
-                p.closePath();
-                drawEnemies.fastPath = p;
-            }
-
-            // Draw void portals behind enemies
-            if (game.voidPortals && game.voidPortals.length > 0) {
-                game.voidPortals.forEach(portal => {
-                    const r = portal.radius;
-                    if (r < 1) return;
-                    const openP = Math.max(0.05, r / portal.maxRadius);
-                    ctx.save();
-                    const grad = ctx.createRadialGradient(portal.x, portal.y, 0, portal.x, portal.y, r);
-                    grad.addColorStop(0,    'rgba(0, 0, 8, 0.99)');
-                    grad.addColorStop(0.55, 'rgba(12, 0, 30, 0.96)');
-                    grad.addColorStop(0.85, 'rgba(40, 0, 80, 0.6)');
-                    grad.addColorStop(1,    'rgba(80, 0, 120, 0)');
-                    ctx.fillStyle = grad;
+        // ═══ VISUAL #16 (v59.7): redrawn classic enemy sprites ═══════════════
+        // Shaped hulls, panel lines and engine glow for the original seven ships
+        // (and their void palette swaps), replacing the flat-rectangle art.
+        // Same footprint, palette and identity as the originals; flat fills only
+        // (no shadowBlur) so per-enemy cost stays comparable. Ships read nose-down
+        // (toward the player); engines sit at the top (rear). Returns false for
+        // any type it doesn't cover so the original branch chain handles it.
+        // Set VISUAL_CONFIG.enemySpriteV2 = false to restore the old art.
+        function drawClassicShipV2(enemy, pulse) {
+            const x = enemy.x, y = enemy.y;
+            switch (enemy.type) {
+                case 'basic':
+                case 'void_normal': {
+                    const isVoid = enemy.type === 'void_normal';
+                    const panel  = isVoid ? '#8a4fac' : '#aa2222';
+                    const dark   = isVoid ? '#4a2a66' : '#701212';
+                    const canopy = isVoid ? '#e8d8ff' : '#ffffff';
+                    const glow   = isVoid ? 'rgba(190,120,255,' : 'rgba(255,160,60,';
+                    // Engine glow (rear = top)
+                    ctx.fillStyle = glow + (0.55 * pulse).toFixed(3) + ')';
+                    ctx.fillRect(x - 6, y - 15, 4, 4 + 3 * pulse);
+                    ctx.fillRect(x + 2, y - 15, 4, 4 + 3 * pulse);
+                    // Wings
+                    ctx.fillStyle = dark;
                     ctx.beginPath();
-                    ctx.ellipse(portal.x, portal.y, r * 0.55, r, 0, 0, Math.PI * 2);
+                    ctx.moveTo(x - 4, y - 2); ctx.lineTo(x - 15, y + 6); ctx.lineTo(x - 15, y + 11); ctx.lineTo(x - 4, y + 8); ctx.closePath();
+                    ctx.moveTo(x + 4, y - 2); ctx.lineTo(x + 15, y + 6); ctx.lineTo(x + 15, y + 11); ctx.lineTo(x + 4, y + 8); ctx.closePath();
                     ctx.fill();
-                    for (let ring = 0; ring < 3; ring++) {
-                        const rr = r * (0.25 + ring * 0.2);
-                        ctx.strokeStyle = `rgba(100, 0, 180, ${openP * (0.4 - ring * 0.1)})`;
-                        ctx.lineWidth = 1;
-                        ctx.beginPath();
-                        ctx.ellipse(portal.x, portal.y, rr * 0.55, rr, 0, 0, Math.PI * 2);
-                        ctx.stroke();
-                    }
-                    ctx.shadowColor = '#cc44ff';
-                    ctx.shadowBlur = 24;
-                    ctx.strokeStyle = `rgba(180, 50, 255, ${openP * 0.92})`;
-                    ctx.lineWidth = 2.5;
+                    // Wingtip cannons
+                    ctx.fillStyle = '#333333';
+                    ctx.fillRect(x - 15, y + 7, 2, 6);
+                    ctx.fillRect(x + 13, y + 7, 2, 6);
+                    // Fuselage
+                    ctx.fillStyle = enemy.color;
                     ctx.beginPath();
-                    ctx.ellipse(portal.x, portal.y, r * 0.55, r, 0, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.shadowBlur = 8;
-                    ctx.strokeStyle = `rgba(230, 180, 255, ${openP * 0.55})`;
-                    ctx.lineWidth = 1;
+                    ctx.moveTo(x, y + 13);
+                    ctx.lineTo(x - 7, y + 3);
+                    ctx.lineTo(x - 8, y - 8);
+                    ctx.lineTo(x - 4, y - 12);
+                    ctx.lineTo(x + 4, y - 12);
+                    ctx.lineTo(x + 8, y - 8);
+                    ctx.lineTo(x + 7, y + 3);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Centre panel stripe
+                    ctx.fillStyle = panel;
                     ctx.beginPath();
-                    ctx.ellipse(portal.x, portal.y, r * 0.55 * 0.91, r * 0.91, 0, 0, Math.PI * 2);
-                    ctx.stroke();
+                    ctx.moveTo(x, y + 10);
+                    ctx.lineTo(x - 3.5, y + 1);
+                    ctx.lineTo(x - 3.5, y - 10);
+                    ctx.lineTo(x + 3.5, y - 10);
+                    ctx.lineTo(x + 3.5, y + 1);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Canopy
+                    ctx.fillStyle = canopy;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y + 8); ctx.lineTo(x - 2.5, y + 1); ctx.lineTo(x + 2.5, y + 1); ctx.closePath();
+                    ctx.fill();
+                    return true;
+                }
+                case 'fast': {
+                    // Slim green dart — swept wings, twin engine flames
+                    ctx.fillStyle = `rgba(120, 255, 120, ${(0.5 * pulse).toFixed(3)})`;
+                    ctx.fillRect(x - 4, y - 15, 3, 4 + 4 * pulse);
+                    ctx.fillRect(x + 1, y - 15, 3, 4 + 4 * pulse);
+                    // Swept wings
+                    ctx.fillStyle = '#177a17';
+                    ctx.beginPath();
+                    ctx.moveTo(x - 2, y + 2); ctx.lineTo(x - 11, y - 8); ctx.lineTo(x - 8, y - 11); ctx.lineTo(x - 1, y - 3); ctx.closePath();
+                    ctx.moveTo(x + 2, y + 2); ctx.lineTo(x + 11, y - 8); ctx.lineTo(x + 8, y - 11); ctx.lineTo(x + 1, y - 3); ctx.closePath();
+                    ctx.fill();
+                    // Fuselage dart
+                    ctx.fillStyle = enemy.color;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y + 12);
+                    ctx.lineTo(x - 4, y + 2);
+                    ctx.lineTo(x - 4.5, y - 10);
+                    ctx.lineTo(x + 4.5, y - 10);
+                    ctx.lineTo(x + 4, y + 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.fillStyle = '#22aa22';
+                    ctx.fillRect(x - 2.5, y - 9, 5, 12);
+                    // Canopy
+                    ctx.fillStyle = '#ccffcc';
+                    ctx.beginPath();
+                    ctx.moveTo(x, y + 9); ctx.lineTo(x - 2, y + 2); ctx.lineTo(x + 2, y + 2); ctx.closePath();
+                    ctx.fill();
+                    return true;
+                }
+                case 'heavy': {
+                    // Blue armoured tank — chamfered hull, armour ribs, reactor core.
+                    // Three turrets kept from the original silhouette.
+                    ctx.fillStyle = '#666666';
+                    ctx.fillRect(x - 25, y - 5, 10, 10);
+                    ctx.fillRect(x + 15, y - 5, 10, 10);
+                    ctx.fillRect(x - 5, y - 25, 10, 10);
+                    ctx.fillStyle = '#3a3a3a';
+                    ctx.fillRect(x - 27, y - 2, 4, 4);
+                    ctx.fillRect(x + 23, y - 2, 4, 4);
+                    ctx.fillRect(x - 2, y - 27, 4, 4);
+                    // Chamfered hull
+                    ctx.fillStyle = enemy.color;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 20, y - 12); ctx.lineTo(x - 12, y - 20); ctx.lineTo(x + 12, y - 20); ctx.lineTo(x + 20, y - 12);
+                    ctx.lineTo(x + 20, y + 12); ctx.lineTo(x + 12, y + 20); ctx.lineTo(x - 12, y + 20); ctx.lineTo(x - 20, y + 12);
+                    ctx.closePath(); ctx.fill();
+                    // Inner armour plate
+                    ctx.fillStyle = '#2222aa';
+                    ctx.beginPath();
+                    ctx.moveTo(x - 15, y - 9); ctx.lineTo(x - 9, y - 15); ctx.lineTo(x + 9, y - 15); ctx.lineTo(x + 15, y - 9);
+                    ctx.lineTo(x + 15, y + 9); ctx.lineTo(x + 9, y + 15); ctx.lineTo(x - 9, y + 15); ctx.lineTo(x - 15, y + 9);
+                    ctx.closePath(); ctx.fill();
+                    // Armour ribs
+                    ctx.fillStyle = '#1111aa';
+                    ctx.fillRect(x - 13, y - 8, 26, 3);
+                    ctx.fillRect(x - 13, y - 1.5, 26, 3);
+                    ctx.fillRect(x - 13, y + 5, 26, 3);
+                    // Reactor core
+                    ctx.fillStyle = '#0d0d55';
+                    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = `rgba(120, 180, 255, ${(0.5 + 0.5 * pulse).toFixed(3)})`;
+                    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+                    return true;
+                }
+                case 'zigzag': {
+                    // Faceted pink diamond — rotating cross kept from the original
+                    ctx.fillStyle = enemy.color;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y - 15); ctx.lineTo(x + 15, y); ctx.lineTo(x, y + 15); ctx.lineTo(x - 15, y); ctx.closePath();
+                    ctx.fill();
+                    // Facet shading (light top, dark bottom)
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+                    ctx.beginPath(); ctx.moveTo(x, y - 15); ctx.lineTo(x + 15, y); ctx.lineTo(x - 15, y); ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = 'rgba(60, 0, 60, 0.30)';
+                    ctx.beginPath(); ctx.moveTo(x - 15, y); ctx.lineTo(x + 15, y); ctx.lineTo(x, y + 15); ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = '#aa22aa';
+                    ctx.beginPath();
+                    ctx.moveTo(x, y - 10); ctx.lineTo(x + 10, y); ctx.lineTo(x, y + 10); ctx.lineTo(x - 10, y); ctx.closePath();
+                    ctx.fill();
+                    // Tip thrusters
+                    ctx.fillStyle = `rgba(255, 150, 255, ${(0.4 + 0.5 * pulse).toFixed(3)})`;
+                    ctx.beginPath(); ctx.arc(x, y - 15, 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x + 15, y, 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x, y + 15, 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x - 15, y, 2, 0, Math.PI * 2); ctx.fill();
+                    // Rotating core cross (original motif)
+                    const rotation = (game.gameTime || 0) * 0.01 + x * 0.1;
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(rotation);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(-2.5, -8, 5, 16);
+                    ctx.fillRect(-8, -2.5, 16, 5);
                     ctx.restore();
-                });
+                    return true;
+                }
+                case 'sniper':
+                case 'void_sniper': {
+                    const isVoid = enemy.type === 'void_sniper';
+                    const hull  = isVoid ? '#6a4c93' : enemy.color;
+                    const panel = isVoid ? '#9b59b6' : '#aaaa22';
+                    const dark  = isVoid ? '#4a3366' : '#77770f';
+                    const lens  = isVoid ? '#e74c3c' : '#ffdd44';
+                    // Comm antenna (rear = top)
+                    ctx.fillStyle = dark;
+                    ctx.fillRect(x - 1, y - 24, 2, 8);
+                    ctx.fillStyle = isVoid ? '#e74c3c' : '#ffffff';
+                    ctx.fillRect(x - 1.5, y - 27, 3, 3);
+                    // Long hexagonal hull
+                    ctx.fillStyle = hull;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 8, y + 10); ctx.lineTo(x - 8, y - 10); ctx.lineTo(x - 4, y - 17); ctx.lineTo(x + 4, y - 17);
+                    ctx.lineTo(x + 8, y - 10); ctx.lineTo(x + 8, y + 10); ctx.lineTo(x + 4, y + 14); ctx.lineTo(x - 4, y + 14);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = panel;
+                    ctx.fillRect(x - 5, y - 12, 10, 22);
+                    // Stabiliser fins
+                    ctx.fillStyle = dark;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 8, y - 2); ctx.lineTo(x - 12, y + 4); ctx.lineTo(x - 12, y + 9); ctx.lineTo(x - 8, y + 6); ctx.closePath();
+                    ctx.moveTo(x + 8, y - 2); ctx.lineTo(x + 12, y + 4); ctx.lineTo(x + 12, y + 9); ctx.lineTo(x + 8, y + 6); ctx.closePath();
+                    ctx.fill();
+                    // Sniper barrel — points at the player
+                    ctx.fillStyle = '#555555';
+                    ctx.fillRect(x - 2, y + 12, 4, 12);
+                    ctx.fillStyle = '#333333';
+                    ctx.fillRect(x - 3, y + 22, 6, 3);
+                    // Targeting lens
+                    ctx.fillStyle = lens;
+                    ctx.beginPath(); ctx.arc(x, y - 4, 3.5, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = `rgba(255, 255, 255, ${(0.35 + 0.45 * pulse).toFixed(3)})`;
+                    ctx.beginPath(); ctx.arc(x, y - 4, 1.7, 0, Math.PI * 2); ctx.fill();
+                    return true;
+                }
+                case 'drone':
+                case 'void_drone': {
+                    const isVoid = enemy.type === 'void_drone';
+                    const body = isVoid ? '#bb99ff' : '#aaaaaa';
+                    const eye  = isVoid ? '#ff66ff' : '#ff0000';
+                    // Rotor arms
+                    ctx.strokeStyle = isVoid ? '#7744bb' : '#555555';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 8, y - 8); ctx.lineTo(x + 8, y + 8);
+                    ctx.moveTo(x + 8, y - 8); ctx.lineTo(x - 8, y + 8);
+                    ctx.stroke();
+                    // Rotor pods
+                    ctx.fillStyle = isVoid ? '#9933cc' : '#666666';
+                    ctx.beginPath(); ctx.arc(x - 8, y - 8, 2.2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x + 8, y - 8, 2.2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x - 8, y + 8, 2.2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x + 8, y + 8, 2.2, 0, Math.PI * 2); ctx.fill();
+                    // Hex body
+                    ctx.fillStyle = enemy.color;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 7, y); ctx.lineTo(x - 3.5, y - 6); ctx.lineTo(x + 3.5, y - 6); ctx.lineTo(x + 7, y);
+                    ctx.lineTo(x + 3.5, y + 6); ctx.lineTo(x - 3.5, y + 6);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = body;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 5, y); ctx.lineTo(x - 2.5, y - 4.3); ctx.lineTo(x + 2.5, y - 4.3); ctx.lineTo(x + 5, y);
+                    ctx.lineTo(x + 2.5, y + 4.3); ctx.lineTo(x - 2.5, y + 4.3);
+                    ctx.closePath(); ctx.fill();
+                    // Sensor eye + glow (original motif)
+                    const sensorGlow = Math.sin((game.gameTime || 0) * 0.02 + x * 0.2) * 0.5 + 0.5;
+                    ctx.fillStyle = eye;
+                    ctx.beginPath(); ctx.arc(x, y, 2.8, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = isVoid ? `rgba(255, 102, 255, ${(sensorGlow * 0.7).toFixed(3)})` : `rgba(255, 0, 0, ${(sensorGlow * 0.6).toFixed(3)})`;
+                    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+                    return true;
+                }
+                case 'elite': {
+                    // Orange battleship — angled prow, layered plating, turret pods
+                    // Engine bank (rear = top)
+                    ctx.fillStyle = '#0d3a80';
+                    ctx.fillRect(x - 12, y - 19, 24, 5);
+                    ctx.fillStyle = `rgba(80, 170, 255, ${(0.45 + 0.5 * pulse).toFixed(3)})`;
+                    ctx.fillRect(x - 10, y - 18, 5, 3);
+                    ctx.fillRect(x - 2.5, y - 18, 5, 3);
+                    ctx.fillRect(x + 5, y - 18, 5, 3);
+                    // Turret pods
+                    ctx.fillStyle = '#444444';
+                    ctx.fillRect(x - 25, y - 4, 10, 8);
+                    ctx.fillRect(x + 15, y - 4, 10, 8);
+                    ctx.fillStyle = '#222222';
+                    ctx.fillRect(x - 21, y + 4, 3, 6);
+                    ctx.fillRect(x + 18, y + 4, 3, 6);
+                    // Hull with angled prow (front = bottom)
+                    ctx.fillStyle = enemy.color;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 20, y - 15); ctx.lineTo(x + 20, y - 15); ctx.lineTo(x + 20, y + 7);
+                    ctx.lineTo(x + 10, y + 15); ctx.lineTo(x - 10, y + 15); ctx.lineTo(x - 20, y + 7);
+                    ctx.closePath(); ctx.fill();
+                    // Plating
+                    ctx.fillStyle = '#cc6600';
+                    ctx.beginPath();
+                    ctx.moveTo(x - 16, y - 12); ctx.lineTo(x + 16, y - 12); ctx.lineTo(x + 16, y + 6);
+                    ctx.lineTo(x + 8, y + 12); ctx.lineTo(x - 8, y + 12); ctx.lineTo(x - 16, y + 6);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = '#ff9900';
+                    ctx.fillRect(x - 13, y - 9, 26, 13);
+                    // Bridge + windows (original motif)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(x - 11, y - 7, 22, 9);
+                    ctx.fillStyle = '#00ffff';
+                    ctx.fillRect(x - 9, y - 5, 4, 4);
+                    ctx.fillRect(x - 2, y - 5, 4, 4);
+                    ctx.fillRect(x + 5, y - 5, 4, 4);
+                    // Prow cannon
+                    ctx.fillStyle = '#7a3d00';
+                    ctx.beginPath();
+                    ctx.moveTo(x - 4, y + 12); ctx.lineTo(x + 4, y + 12); ctx.lineTo(x + 2.5, y + 17); ctx.lineTo(x - 2.5, y + 17);
+                    ctx.closePath(); ctx.fill();
+                    return true;
+                }
+                default:
+                    return false;
             }
+        }
 
-            game.enemies.forEach(enemy => {
-                // Cull enemies fully off-screen
-                const bottomCullMargin = (enemy.type === 'dreadnought' || enemy.type === 'void_dreadnought')
-                    ? Math.max(65, enemy.height / 2 + 12)
-                    : Math.max(40, enemy.height / 2 + 12);
-                const topCullMargin = (enemy.type === 'dreadnought' || enemy.type === 'void_dreadnought')
-                    ? 65
-                    : enemy.type === 'warship' ? enemy.height / 2 + 40 : 40;
-                if (enemy.x + 40 < 0 || enemy.x - 40 > canvas.width ||
-                    (enemy.type === 'warship' ? (enemy.y + enemy.height / 2 < -topCullMargin) : (enemy.y + topCullMargin < 0)) ||
-                    (enemy.type === 'warship' ? (enemy.y - enemy.height / 2 > canvas.height + 40) : (enemy.y - bottomCullMargin > canvas.height))) return;
-
-                const pulse = Math.sin((game.gameTime || 0) * 0.005 + enemy.x * 0.01) * 0.1 + 0.9;
-                
-                // Apply fade effect if enemy is fading (but not during player explosion)
-                if (enemy.fadeAlpha !== undefined && enemy.fadeAlpha < 1 && !game.playerExploding) {
-                    ctx.save();
-                    ctx.globalAlpha = enemy.fadeAlpha;
-                }
-
-                // Void teleport scale/fade (void master portal sinking/emerging + beam-teleported emergence)
-                let _vmScaleApplied = false;
-                {
-                    const _vmS = (enemy.vmTeleportPhase != null && enemy.vmTeleportScale != null) ? enemy.vmTeleportScale : 1;
-                    const _beS = (enemy.masterBeamPhase === 2 && enemy.masterBeamTimer != null) ? Math.min(1, 1 - enemy.masterBeamTimer / 30) : 1;
-                    const _ds = Math.min(_vmS, _beS);
-                    if (_ds < 0.998) {
-                        _vmScaleApplied = true;
-                        const clamped = Math.max(0.001, _ds);
-                        ctx.save();
-                        ctx.globalAlpha *= Math.max(0.05, _ds);
-                        ctx.translate(enemy.x, enemy.y);
-                        ctx.scale(clamped, clamped);
-                        ctx.translate(-enemy.x, -enemy.y);
-                    }
-                }
-                
-                // Enemy-specific graphics
-                
-                // VISUAL #7: Void enemy aura — soft pulsing purple halo before drawing the ship
-                if (VISUAL_CONFIG.voidAura && (
-                    enemy.type === 'void_soldier' || enemy.type === 'void_master' ||
-                    enemy.type === 'void_warrior' || enemy.type === 'void_turret' ||
-                    enemy.type === 'void_sniper' || enemy.type === 'void_normal' ||
-                    enemy.type === 'void_drone' || enemy.type === 'void_dreadnought'
-                )) {
-                    const auraT = Date.now() * 0.002;
-                    const auraA = 0.055 + Math.sin(auraT + enemy.x * 0.01) * 0.025;
-                    const auraR = Math.max(enemy.width || 24, enemy.height || 24) * 0.95;
-                    ctx.save();
-                    const ag = ctx.createRadialGradient(enemy.x, enemy.y, auraR * 0.25, enemy.x, enemy.y, auraR);
-                    ag.addColorStop(0, `rgba(120, 30, 180, ${(auraA * 2.2).toFixed(3)})`);
-                    ag.addColorStop(1, 'rgba(60, 0, 100, 0)');
-                    ctx.fillStyle = ag;
-                    ctx.beginPath(); ctx.arc(enemy.x, enemy.y, auraR, 0, Math.PI * 2); ctx.fill();
-                    ctx.restore();
-                }
-                
+        // v59.7b: the entire per-type enemy body art chain, extracted from
+        // drawEnemies so it can be drawn twice — once normally and once
+        // re-tinted white (canvas filter) for the silhouette-accurate hit flash.
+        // Draw-only: keep state changes out of here (it is double-drawn while
+        // an enemy is flashing; game._silhouetteRedraw is true on the 2nd pass).
+        function drawEnemyBody(enemy, pulse) {
                 if (drawCandidateEnemy(enemy)) {
                     // v59.4 candidate enemy — drawn by the shared helper above
+                } else if (VISUAL_CONFIG.enemySpriteV2 && drawClassicShipV2(enemy, pulse)) {
+                    // VISUAL #16 (v59.7) — redrawn classic ship sprites
                 } else if (enemy.type === 'basic') {
                     // Basic red fighter
                     ctx.fillStyle = enemy.color;
@@ -8981,7 +9294,7 @@
                     ctx.fill();
                     
                     // Rotating elements
-                    const rotation = Date.now() * 0.01 + enemy.x * 0.1;
+                    const rotation = game.drawNow * 0.01 + enemy.x * 0.1;
                     ctx.save();
                     ctx.translate(enemy.x, enemy.y);
                     ctx.rotate(rotation);
@@ -9040,7 +9353,7 @@
                     ctx.fill();
                     
                     // Sensor glow
-                    const sensorGlow = Math.sin(Date.now() * 0.02 + enemy.x * 0.2) * 0.5 + 0.5;
+                    const sensorGlow = Math.sin(game.drawNow * 0.02 + enemy.x * 0.2) * 0.5 + 0.5;
                     ctx.fillStyle = `rgba(255, 102, 255, ${sensorGlow * 0.7})`;
                     ctx.beginPath();
                     ctx.arc(enemy.x, enemy.y, 5, 0, Math.PI * 2);
@@ -9066,7 +9379,7 @@
                     ctx.fill();
                     
                     // Sensor glow
-                    const sensorGlow = Math.sin(Date.now() * 0.02 + enemy.x * 0.2) * 0.5 + 0.5;
+                    const sensorGlow = Math.sin(game.drawNow * 0.02 + enemy.x * 0.2) * 0.5 + 0.5;
                     ctx.fillStyle = `rgba(255, 0, 0, ${sensorGlow * 0.6})`;
                     ctx.beginPath();
                     ctx.arc(enemy.x, enemy.y, 5, 0, Math.PI * 2);
@@ -9246,7 +9559,7 @@
                     // Bottom engine bay
                     ctx.fillStyle = '#232f5f';
                     ctx.fillRect(enemy.x - 36, enemy.y + h - 32, 72, 20);
-                    ctx.fillStyle = `rgba(115, 170, 255, ${Math.sin(Date.now() * 0.003) * 0.2 + 0.35})`;
+                    ctx.fillStyle = `rgba(115, 170, 255, ${Math.sin(game.drawNow * 0.003) * 0.2 + 0.35})`;
                     ctx.fillRect(enemy.x - 28, enemy.y + h - 28, 56, 12);
 
                 } else if (enemy.type === 'void_soldier') {
@@ -9319,7 +9632,7 @@
                     // Special variant indicator with purple static phasing effect
                     if (enemy.specialVariant) {
                         // More subtle outer glow
-                        const phaseTime = Date.now() * 0.01;
+                        const phaseTime = game.drawNow * 0.01;
                         const staticIntensity = Math.sin(phaseTime) * 0.25 + 0.4; // Reduced intensity
                         
                         // Subtle outer glow aura
@@ -9342,11 +9655,11 @@
                         // Reduced noise pattern inside body
                         const noiseIntensity = Math.sin(phaseTime * 1.2) * 0.2 + 0.4; // Much more subtle
                         for (let i = 0; i < 12; i++) { // Reduced from 20 particles
-                            const noiseX = enemy.x + (Math.random() - 0.5) * w * 1.0;
-                            const noiseY = enemy.y + (Math.random() - 0.5) * h * 1.5;
-                            const noiseSize = 1 + Math.random() * 2; // Smaller particles
+                            const noiseX = enemy.x + (drawRand() - 0.5) * w * 1.0;
+                            const noiseY = enemy.y + (drawRand() - 0.5) * h * 1.5;
+                            const noiseSize = 1 + drawRand() * 2; // Smaller particles
                             
-                            ctx.fillStyle = `rgba(199, 155, 211, ${noiseIntensity * (0.2 + Math.random() * 0.3)})`;
+                            ctx.fillStyle = `rgba(199, 155, 211, ${noiseIntensity * (0.2 + drawRand() * 0.3)})`;
                             ctx.beginPath();
                             ctx.arc(noiseX, noiseY, noiseSize, 0, Math.PI * 2);
                             ctx.fill();
@@ -9372,8 +9685,8 @@
                             const radius = w * (1.2 + Math.sin(phaseTime + i) * 0.2);
                             const startX = enemy.x + Math.cos(angle) * radius;
                             const startY = enemy.y + Math.sin(angle) * radius * 0.8;
-                            const endX = startX + (Math.random() - 0.5) * 6; // Shorter lines
-                            const endY = startY + (Math.random() - 0.5) * 6;
+                            const endX = startX + (drawRand() - 0.5) * 6; // Shorter lines
+                            const endY = startY + (drawRand() - 0.5) * 6;
                             
                             ctx.beginPath();
                             ctx.moveTo(startX, startY);
@@ -9383,7 +9696,7 @@
                     }
                     
                     // Void energy tendrils (subtle animation)
-                    const time = Date.now() * 0.003;
+                    const time = game.drawNow * 0.003;
                     ctx.strokeStyle = `rgba(155, 89, 182, ${0.3 + Math.sin(time + enemy.x * 0.01) * 0.2})`;
                     ctx.lineWidth = 1;
                     for (let i = 0; i < 3; i++) {
@@ -9422,7 +9735,7 @@
                     // Void Master - sharp angular multi-part futuristic design
                     const w = enemy.width / 2;   // 18
                     const h = enemy.height / 2;  // 25
-                    const t = Date.now() * 0.003;
+                    const t = game.drawNow * 0.003;
 
                     // === MAIN HEXAGONAL BODY ===
                     ctx.fillStyle = '#2a0848';
@@ -9661,7 +9974,7 @@
                     while (_fjAngDiff >  Math.PI) _fjAngDiff -= Math.PI * 2;
                     while (_fjAngDiff < -Math.PI) _fjAngDiff += Math.PI * 2;
                     const _fjThrottle = Math.abs(_fjAngDiff) < Math.PI / 2 ? 0.9 : 0.35;
-                    const _fjFlicker = _fjThrottle * (0.8 + Math.sin(Date.now() * 0.025) * 0.2);
+                    const _fjFlicker = _fjThrottle * (0.8 + Math.sin(game.drawNow * 0.025) * 0.2);
                     ctx.fillStyle = `rgba(255, 130, 0, ${_fjFlicker})`;
                     ctx.beginPath();
                     ctx.ellipse(0, hh - 2, hw * 0.18, 2.8, 0, 0, Math.PI * 2);
@@ -9735,7 +10048,7 @@
                             ctx.fillStyle = '#ffee88';
                             ctx.fillRect(-hw * 0.12, -hh + 2, hw * 0.24, 5);
 
-                            const sfGlow = 0.55 + Math.sin(Date.now() * 0.025) * 0.20;
+                            const sfGlow = 0.55 + Math.sin(game.drawNow * 0.025) * 0.20;
                             ctx.fillStyle = `rgba(255, ${(100 + sfGlow * 80) | 0}, 0, ${sfGlow})`;
                             ctx.beginPath();
                             ctx.ellipse(-hw * 0.22, hh - 1, hw * 0.13, 2.8, 0, 0, Math.PI * 2);
@@ -9793,7 +10106,7 @@
                     const r = (isFinite(enemy.width) && enemy.width > 0) ? enemy.width / 2 : 22;
                     if (!isFinite(enemy.x) || !isFinite(enemy.y)) { /* skip draw */ }
                     else {
-                    const t = Date.now() * 0.002;
+                    const t = game.drawNow * 0.002;
                     const pulse = Math.sin(t * 3) * 0.12 + 0.88;
 
                     ctx.save();
@@ -10057,7 +10370,7 @@
                     ctx.fillRect(enemy.x - 1, enemy.y - h * 0.4, 2, h * 0.8);
                     
                     // Void energy connecting the bodies
-                    const time = Date.now() * 0.005;
+                    const time = game.drawNow * 0.005;
                     ctx.strokeStyle = `rgba(155, 89, 182, ${0.4 + Math.sin(time) * 0.3})`;
                     ctx.lineWidth = 2;
                     ctx.beginPath();
@@ -10074,7 +10387,7 @@
                     
                 } else if (enemy.type === 'void_protector') {
                     const r = enemy.width / 2;   // radius of the orb
-                    const t = Date.now() * 0.002;
+                    const t = game.drawNow * 0.002;
                     const vp = enemy.vpPulse || 0;
                     const pulse = 0.93 + Math.sin(vp) * 0.07;
 
@@ -10214,7 +10527,7 @@
                     // Mini asteroid layer - fast rocky skimmer that drops asteroids while it moves
                     const w = enemy.width / 2;
                     const h = enemy.height / 2;
-                    const t = Date.now() * 0.003;
+                    const t = game.drawNow * 0.003;
                     const pulse = Math.sin(t * 3) * 0.12 + 0.88;
 
                     ctx.save();
@@ -10734,7 +11047,7 @@
                     ctx.fillStyle = `rgba(255,${60+pulse*40|0},0,${0.4+pulse*0.4})`;
                     ctx.fillRect(x - 8, y + 14, 16, 4);
                     // Draw defender cluster bombs
-                    if (enemy.clusterBombs) {
+                    if (enemy.clusterBombs && !game._silhouetteRedraw) { // v59.7b: dropped bombs aren't part of the body silhouette
                         enemy.clusterBombs.forEach(bomb => {
                             if (!bomb.exploded) {
                                 ctx.fillStyle = '#555555';
@@ -10755,7 +11068,7 @@
                     }
                 }
                 // Draw defender_heavy cluster bombs separately (not inside defender_elite block)
-                if (enemy.type === 'defender_heavy' && enemy.clusterBombs) {
+                if (enemy.type === 'defender_heavy' && enemy.clusterBombs && !game._silhouetteRedraw) { // v59.7b: not part of the silhouette
                     enemy.clusterBombs.forEach(bomb => {
                         if (!bomb.exploded) {
                             ctx.fillStyle = '#555555';
@@ -10774,11 +11087,149 @@
                         }
                     });
                 }
+        }
+
+        function drawEnemies() {
+            // Cache a Path2D for the 'fast' enemy shape to avoid re-creating paths
+            if (!drawEnemies.fastPath) {
+                const p = new Path2D();
+                p.moveTo(0, 10);
+                p.lineTo(-10, -10);
+                p.lineTo(10, -10);
+                p.closePath();
+                drawEnemies.fastPath = p;
+            }
+
+            // Draw void portals behind enemies
+            if (game.voidPortals && game.voidPortals.length > 0) {
+                game.voidPortals.forEach(portal => {
+                    const r = portal.radius;
+                    if (r < 1) return;
+                    const openP = Math.max(0.05, r / portal.maxRadius);
+                    ctx.save();
+                    const grad = ctx.createRadialGradient(portal.x, portal.y, 0, portal.x, portal.y, r);
+                    grad.addColorStop(0,    'rgba(0, 0, 8, 0.99)');
+                    grad.addColorStop(0.55, 'rgba(12, 0, 30, 0.96)');
+                    grad.addColorStop(0.85, 'rgba(40, 0, 80, 0.6)');
+                    grad.addColorStop(1,    'rgba(80, 0, 120, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.ellipse(portal.x, portal.y, r * 0.55, r, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    for (let ring = 0; ring < 3; ring++) {
+                        const rr = r * (0.25 + ring * 0.2);
+                        ctx.strokeStyle = `rgba(100, 0, 180, ${openP * (0.4 - ring * 0.1)})`;
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.ellipse(portal.x, portal.y, rr * 0.55, rr, 0, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.shadowColor = '#cc44ff';
+                    ctx.shadowBlur = 24;
+                    ctx.strokeStyle = `rgba(180, 50, 255, ${openP * 0.92})`;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.ellipse(portal.x, portal.y, r * 0.55, r, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.shadowBlur = 8;
+                    ctx.strokeStyle = `rgba(230, 180, 255, ${openP * 0.55})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.ellipse(portal.x, portal.y, r * 0.55 * 0.91, r * 0.91, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                });
+            }
+
+            game.enemies.forEach(enemy => {
+                // Cull enemies fully off-screen
+                const bottomCullMargin = (enemy.type === 'dreadnought' || enemy.type === 'void_dreadnought')
+                    ? Math.max(65, enemy.height / 2 + 12)
+                    : Math.max(40, enemy.height / 2 + 12);
+                const topCullMargin = (enemy.type === 'dreadnought' || enemy.type === 'void_dreadnought')
+                    ? 65
+                    : enemy.type === 'warship' ? enemy.height / 2 + 40 : 40;
+                if (enemy.x + 40 < 0 || enemy.x - 40 > canvas.width ||
+                    (enemy.type === 'warship' ? (enemy.y + enemy.height / 2 < -topCullMargin) : (enemy.y + topCullMargin < 0)) ||
+                    (enemy.type === 'warship' ? (enemy.y - enemy.height / 2 > canvas.height + 40) : (enemy.y - bottomCullMargin > canvas.height))) return;
+
+                const pulse = Math.sin((game.gameTime || 0) * 0.005 + enemy.x * 0.01) * 0.1 + 0.9;
+                
+                // Apply fade effect if enemy is fading (but not during player explosion)
+                if (enemy.fadeAlpha !== undefined && enemy.fadeAlpha < 1 && !game.playerExploding) {
+                    ctx.save();
+                    ctx.globalAlpha = enemy.fadeAlpha;
+                }
+
+                // Void teleport scale/fade (void master portal sinking/emerging + beam-teleported emergence)
+                let _vmScaleApplied = false;
+                {
+                    const _vmS = (enemy.vmTeleportPhase != null && enemy.vmTeleportScale != null) ? enemy.vmTeleportScale : 1;
+                    const _beS = (enemy.masterBeamPhase === 2 && enemy.masterBeamTimer != null) ? Math.min(1, 1 - enemy.masterBeamTimer / 30) : 1;
+                    const _ds = Math.min(_vmS, _beS);
+                    if (_ds < 0.998) {
+                        _vmScaleApplied = true;
+                        const clamped = Math.max(0.001, _ds);
+                        ctx.save();
+                        ctx.globalAlpha *= Math.max(0.05, _ds);
+                        ctx.translate(enemy.x, enemy.y);
+                        ctx.scale(clamped, clamped);
+                        ctx.translate(-enemy.x, -enemy.y);
+                    }
+                }
+
+                // VISUAL #20 (v59.7): roll small fighters into lateral movement
+                let _bankApplied = false;
+                if (VISUAL_CONFIG.enemyBanking && enemy.bank && Math.abs(enemy.bank) > 0.012) {
+                    _bankApplied = true;
+                    ctx.save();
+                    ctx.translate(enemy.x, enemy.y);
+                    ctx.rotate(enemy.bank);
+                    ctx.translate(-enemy.x, -enemy.y);
+                }
+                
+                // Enemy-specific graphics
+                
+                // VISUAL #7: Void enemy aura — soft pulsing purple halo before drawing the ship
+                if (VISUAL_CONFIG.voidAura && (
+                    enemy.type === 'void_soldier' || enemy.type === 'void_master' ||
+                    enemy.type === 'void_warrior' || enemy.type === 'void_turret' ||
+                    enemy.type === 'void_sniper' || enemy.type === 'void_normal' ||
+                    enemy.type === 'void_drone' || enemy.type === 'void_dreadnought'
+                )) {
+                    const auraT = game.drawNow * 0.002;
+                    const auraA = 0.055 + Math.sin(auraT + enemy.x * 0.01) * 0.025;
+                    const auraR = Math.max(enemy.width || 24, enemy.height || 24) * 0.95;
+                    ctx.save();
+                    const ag = ctx.createRadialGradient(enemy.x, enemy.y, auraR * 0.25, enemy.x, enemy.y, auraR);
+                    ag.addColorStop(0, `rgba(120, 30, 180, ${(auraA * 2.2).toFixed(3)})`);
+                    ag.addColorStop(1, 'rgba(60, 0, 100, 0)');
+                    ctx.fillStyle = ag;
+                    ctx.beginPath(); ctx.arc(enemy.x, enemy.y, auraR, 0, Math.PI * 2); ctx.fill();
+                    ctx.restore();
+                }
+                
+                drawEnemyBody(enemy, pulse);
+
+                // v59.7b: silhouette-accurate hit flash — the exact body art is
+                // redrawn tinted white via canvas filter, so the flash hugs every
+                // wing, spike and barrel with no gaps and no spill over the empty
+                // space between body parts
+                if (VISUAL_CONFIG.enemyHitFlash && enemy.hitFlashTimer > 0 && CTX_FILTER_OK) {
+                    ctx.save();
+                    game._silhouetteRedraw = true;
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha *= Math.min(1, enemy.hitFlashTimer / 5) * 0.5;
+                    ctx.filter = 'brightness(0) invert(1)';
+                    drawEnemyBody(enemy, pulse);
+                    game._silhouetteRedraw = false;
+                    ctx.restore();
+                }
                 // ═══════════════════════════════════════════════════════════════════
 
                 // Beam target glow for any enemy being targeted by void master beam
                 if (enemy.masterBeamPhase === 1) {
-                    const beamPulse = Math.sin(Date.now() * 0.05) * 0.5 + 0.5;
+                    const beamPulse = Math.sin(game.drawNow * 0.05) * 0.5 + 0.5;
                     ctx.save();
                     ctx.shadowColor = '#cc44ff';
                     ctx.shadowBlur = 30;
@@ -10793,6 +11244,8 @@
                     ctx.fill();
                     ctx.restore();
                 }
+                // VISUAL #20: pop the bank rotation (LIFO — applied after the scale)
+                if (_bankApplied) ctx.restore();
                 // Restore teleport scale transform if applied
                 if (_vmScaleApplied) ctx.restore();
                 
@@ -10804,6 +11257,11 @@
                     const _edgeAlpha = _baseAlpha * 0.7; // 30% lower outer flash opacity
                     ctx.globalAlpha = _edgeAlpha;
                     ctx.fillStyle = '#ffffff';
+
+                    // v59.7b: these approximated flash shapes are only the fallback
+                    // for browsers without ctx.filter — the silhouette-accurate
+                    // flash is drawn right after the body art in drawEnemies
+                    if (!CTX_FILTER_OK) {
 
                     // Helpers — each draws a ring + soft body fill matching the given shape
                     const _flashCircle = (cx, cy, r) => {
@@ -10963,6 +11421,8 @@
                     ctx.beginPath();
                     ctx.arc(enemy.x, enemy.y, _popR, 0, Math.PI * 2);
                     ctx.stroke();
+                    } // end !CTX_FILTER_OK fallback (shapes + ring — the silhouette
+                      // flash conforms to the body exactly, so neither is wanted)
 
                     ctx.restore();
                     enemy.hitFlashTimer -= game.frameScale || 1; // v59.3: frame-rate independent
@@ -11954,7 +12414,7 @@
                             boss.bomb = null;
                             boss.bombExploding = false;
                             // Reset for next bomb cycle
-                            setTimeout(() => {
+                            scheduleEffect(() => {
                                 if (boss.health > 0 && boss.health / boss.maxHealth <= 0.5) {
                                     boss.bombCountdownActive = true;
                                     boss.bombCountdown = 5;
@@ -12641,7 +13101,7 @@
                 },
                 1: () => { // Void pulse wave
                     for (let pulse = 0; pulse < 4; pulse++) { // Reduced by ~15% from 5
-                        setTimeout(() => {
+                        scheduleEffect(() => {
                             if (game.boss !== boss || boss.exploding) return; // boss died mid-pattern
                             const bulletsInPulse = 14; // Reduced by ~15% from 16
                             for (let i = 0; i < bulletsInPulse; i++) {
@@ -12711,7 +13171,7 @@
             
             // Reduced waves for better performance
             for (let wave = 0; wave < 2; wave++) { // Reduced from 3 waves
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (game.boss !== boss || boss.exploding) return; // boss died mid-attack
                     for (let i = 0; i < barrageCount / 2; i++) { // Updated for 2 waves
                         // Random spread around boss for initial positions
@@ -12748,7 +13208,7 @@
             }
             
             // Reduced additional burst from specific directions
-            setTimeout(() => {
+            scheduleEffect(() => {
                 if (game.boss !== boss || boss.exploding) return; // boss died mid-attack
                 // Reduced top edge barrage
                 for (let i = 0; i < 8; i++) { // Reduced from 15
@@ -12988,7 +13448,7 @@
             switch (boss.clusterBombPattern) {
                 case 0: // Row pattern from boss
                     for (let i = 0; i < 4; i++) {
-                        setTimeout(() => {
+                        scheduleEffect(() => {
                             const clusterBomb = {
                                 x: boss.x + (i - 1.5) * 30, // Spread horizontally from boss position
                                 y: boss.y + boss.height / 2,
@@ -13010,7 +13470,7 @@
                     
                 case 1: // Diagonal pattern from boss
                     for (let i = 0; i < 5; i++) {
-                        setTimeout(() => {
+                        scheduleEffect(() => {
                             const offsetX = (i - 2) * 40; // Spread from boss center
                             const clusterBomb = {
                                 x: boss.x + offsetX,
@@ -13039,7 +13499,7 @@
                     
                 case 2: // Spread pattern from boss
                     for (let i = 0; i < 6; i++) {
-                        setTimeout(() => {
+                        scheduleEffect(() => {
                             const angle = (i / 6) * Math.PI * 2;
                             const clusterBomb = {
                                 x: boss.x + (Math.random() - 0.5) * 60, // Start near boss with spread
@@ -13168,7 +13628,7 @@
             
             // Create cluster bullet explosion - reduced
             for (let cluster = 0; cluster < 3; cluster++) { // Reduced from 4 to 3
-                setTimeout(() => {
+                scheduleEffect(() => {
                     const bulletsPerCluster = 8; // Reduced from 12 to 8
                     for (let i = 0; i < bulletsPerCluster; i++) {
                         const angle = (i / bulletsPerCluster) * Math.PI * 2 + cluster * 0.3;
@@ -13198,7 +13658,7 @@
             const explosionY = bomb.y;
             
             // Fire lasers after explosion visual completes
-            setTimeout(() => {
+            scheduleEffect(() => {
                 // Boss-owned weapon: skip if the destroyer died/despawned during the 1.5s wait
                 if (!game.boss || game.boss.exploding) return;
                 // Fire three lasers in different directions
@@ -13214,7 +13674,7 @@
                 laserDirections.push(offsetAngle);
                 
                 laserDirections.forEach((angle, i) => {
-                    setTimeout(() => {
+                    scheduleEffect(() => {
                         fireLaserBeam(explosionX, explosionY, angle);
                     }, i * 150); // Quick succession
                 });
@@ -13241,7 +13701,7 @@
             });
             
             // Fire actual damaging laser after guidance fades
-            setTimeout(() => {
+            scheduleEffect(() => {
                 playSfxVariant('LaserBomb_Fire', 0.72, 0.05, 0.04); // v59.5: beam blast
                 // Create fast-moving laser that travels along guidance line
                 const laserSpeed = 30; // Very fast
@@ -13702,7 +14162,7 @@
             const bulletsPerRow = Math.floor(4 + boss.attackChaos * 5); // 4 to 9 bullets per row (reduced)
             
             for (let row = 0; row < rows; row++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     for (let i = 0; i < bulletsPerRow; i++) {
                         const sourceX = boss.x - boss.width/3 + (i / (bulletsPerRow - 1)) * (boss.width * 2/3);
                         const sourceY = boss.y + boss.height/2;
@@ -13726,7 +14186,7 @@
             ];
             
             directions.forEach((dir, index) => {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     const bulletCount = Math.floor(3 + boss.attackChaos * 4); // Reduced bullets per direction
                     for (let i = 0; i < bulletCount; i++) {
                         const sourceX = boss.x + (Math.random() - 0.5) * 60;
@@ -13743,7 +14203,7 @@
             const spiralBullets = Math.floor(8 + boss.attackChaos * 10); // 8 to 18 bullets (reduced)
             
             for (let i = 0; i < spiralBullets; i++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     const angle = (i / spiralBullets) * Math.PI * 4 + Date.now() * 0.001; // Fewer rotations
                     const radius = 20 + (i / spiralBullets) * 50; // Smaller spiral
                     const sourceX = boss.x + Math.cos(angle) * radius;
@@ -13759,7 +14219,7 @@
             const waves = Math.floor(3 + boss.attackChaos * 3); // 3 to 6 waves (reduced)
             
             for (let wave = 0; wave < waves; wave++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     const bulletsInWave = Math.floor(5 + boss.attackChaos * 6); // Fewer bullets per wave
                     for (let i = 0; i < bulletsInWave; i++) {
                         const waveX = boss.x - boss.width/2 + (i / (bulletsInWave - 1)) * boss.width;
@@ -13776,7 +14236,7 @@
             const bulletCount = Math.floor(12 + boss.attackChaos * 18); // 12 to 30 bullets (reduced chaos)
             
             for (let i = 0; i < bulletCount; i++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (!game.boss || game.boss !== boss) return; // boss may have died before this fired
                     const sourceX = boss.x + (Math.random() - 0.5) * boss.width;
                     const sourceY = boss.y + (Math.random() - 0.5) * boss.height;
@@ -13906,7 +14366,7 @@
                             const angle = (i / bulletsInRing) * Math.PI * 2;
                             const speed = 3 + ring * 0.5;
                             
-                            setTimeout(() => {
+                            scheduleEffect(() => {
                                 if (game.boss && game.boss.type === 'knight') {
                                     game.enemyBullets.push({
                                         x: boss.x,
@@ -14112,7 +14572,7 @@
             if (!game.gameStarted || game.gameOver) return;
             game.enemies = [];
             game.enemyBullets = [];
-            game.particles = [];
+            game.particles = []; game.delayedEffects = [];
             if (game.boss) game.boss = null;
             game.voidLightning = [];
             game.voidLightningWarnings = [];
@@ -14202,7 +14662,7 @@
                     boss.teleportWarningTimer = 35;
                     const nx = 135 + Math.random() * (canvas.width - 270);
                     const ny = 80 + Math.random() * 160;
-                    setTimeout(() => {
+                    scheduleEffect(() => {
                         if (game.boss && game.boss.type === 'gatekeeper') {
                             boss.x = nx; boss.y = ny;
                             boss.teleportWarning = false;
@@ -14244,7 +14704,7 @@
                 } else {
                     const bolts = ph >= 6 ? 2 : 1; // v59.6: was 3 bolts at ph6+
                     for (let b = 0; b < bolts; b++) {
-                        setTimeout(() => { if (game.boss && game.boss.type === 'gatekeeper') fireVoidLightning(boss); }, b * 420);
+                        scheduleEffect(() => { if (game.boss && game.boss.type === 'gatekeeper') fireVoidLightning(boss); }, b * 420);
                     }
                 }
                 // v59.6: phases 1-3 unchanged; 4-7 keep breathing room (ph7 min was 380ms)
@@ -14368,7 +14828,7 @@
                     const rings = Math.min(3, 2 + Math.floor(ph / 2));
                     for (let r = 0; r < rings; r++) {
                         const rc = 8 + r * 3, rs = spd - r * 0.35;
-                        setTimeout(() => {
+                        scheduleEffect(() => {
                             if (!game.boss || game.boss.type !== 'gatekeeper') return;
                             for (let i = 0; i < rc; i++) {
                                 const a = (i / rc) * Math.PI * 2;
@@ -14404,7 +14864,7 @@
                         for (let i = 0; i < 5; i++) {
                             const tval = (Date.now() * 0.003) + i * 0.45 + w * 2.2;
                             const yo = Math.sin(tval) * 65;
-                            setTimeout(() => {
+                            scheduleEffect(() => {
                                 if (!game.boss || game.boss.type !== 'gatekeeper') return;
                                 game.enemyBullets.push({ x: w % 2 === 0 ? 0 : canvas.width, y: 90 + yo + w * 35,
                                     width: 10, height: 10, speedX: w % 2 === 0 ? spd + 0.5 : -(spd + 0.5), speedY: 0.4,
@@ -14429,7 +14889,7 @@
             const spread = 0.28;
             for (let i = 0; i < beamCount; i++) {
                 const offset = (i - (beamCount - 1) / 2) * spread;
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (game.boss && game.boss.type === 'gatekeeper') fireLaserBeam(boss.x, boss.y, baseAngle + offset);
                 }, i * 180);
             }
@@ -14441,7 +14901,7 @@
             const cnt = Math.min(16, 6 + boss.phase * 2);
             const chaos = boss.phase >= 6;
             for (let i = 0; i < cnt; i++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (!game.boss || game.boss.type !== 'gatekeeper') return;
                     const a = Math.random() * Math.PI * 2;
                     const r = 40 + Math.random() * 80;
@@ -14463,7 +14923,7 @@
             // v59.6: capped (was 3+ph → 10 bombs at ph7)
             const waveSize = Math.min(5, 2 + Math.floor(boss.phase / 2));
             for (let i = 0; i < waveSize; i++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (!game.boss || game.boss.type !== 'gatekeeper') return;
                     const angle = Math.atan2(game.player.y - boss.y, game.player.x - boss.x) + (Math.random()-0.5)*1.1;
                     const spd = 2.4 + Math.random() * 1.5;
@@ -14481,7 +14941,7 @@
             // v59.6: capped at 2 (was up to 4)
             const cnt = Math.min(2, 1 + Math.floor(boss.phase / 3));
             for (let i = 0; i < cnt; i++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (!game.boss || game.boss.type !== 'gatekeeper') return;
                     const bomb = {
                         x: boss.x + (Math.random()-0.5)*80, y: boss.y + boss.height / 2,
@@ -14507,7 +14967,7 @@
                 const sx = tx + Math.cos(a) * spawnR, sy = ty + Math.sin(a) * spawnR;
                 const dx = tx - sx, dy = ty - sy, d = Math.sqrt(dx*dx+dy*dy) || 1;
                 const spd = 2.7 + boss.phase * 0.22;
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (!game.boss || game.boss.type !== 'gatekeeper') return;
                     game.enemyBullets.push({ x: sx, y: sy, width: 10, height: 10,
                         speedX: (dx/d) * spd, speedY: (dy/d) * spd,
@@ -14521,7 +14981,7 @@
             // v59.6: was 5 waves × 48 bullets (240!) at ph7 — now max 3 × 30 with wider wave gaps
             const waves = Math.min(3, 2 + (boss.phase >= 7 ? 1 : 0));
             for (let w = 0; w < waves; w++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (!game.boss || game.boss.type !== 'gatekeeper') return;
                     const bpw = Math.min(30, 16 + boss.phase * 2), spd = 2.4 + w * 0.45;
                     const ao = w * (Math.PI / waves);
@@ -14778,8 +15238,8 @@
                 // Lightning crackling inside during flash
                 if (p.lightningFlash > 0) {
                     for (let lc = 0; lc < 6; lc++) {
-                        const la = Math.random()*Math.PI*2, lr1 = Math.random()*p.radius*0.72;
-                        const la2 = la+(Math.random()-0.5)*1.8, lr2 = Math.random()*p.radius*0.76;
+                        const la = drawRand()*Math.PI*2, lr1 = drawRand()*p.radius*0.72;
+                        const la2 = la+(drawRand()-0.5)*1.8, lr2 = drawRand()*p.radius*0.76;
                         ctx.strokeStyle = `rgba(200,160,255,${p.lightningFlash*0.75})`;
                         ctx.lineWidth = 1;
                         ctx.beginPath();
@@ -14802,7 +15262,7 @@
 
         function drawGatekeeper(boss) {
             const ph = boss.phase;
-            const t = Date.now();
+            const t = game.drawNow;
             const pulse = Math.sin(boss.pulseTimer * 0.05) * 0.5 + 0.5;
             const corePulse = Math.sin(boss.pulseTimer * 0.08) * 0.5 + 0.5;
             const techFlicker = Math.sin(boss.absorbedTechFlicker) * 0.5 + 0.5;
@@ -15028,17 +15488,17 @@
             ctx.beginPath(); ctx.arc(boss.x,boss.y,21,0,Math.PI*2); ctx.stroke();
 
             // Surface void energy crackling
-            if (Math.random() < 0.38) {
+            if (drawRand() < 0.38) {
                 const arcCnt = 1 + Math.floor(ph/2);
                 for (let a=0;a<arcCnt;a++) {
-                    const aa=Math.random()*Math.PI*2, ar=58+Math.random()*48;
+                    const aa=drawRand()*Math.PI*2, ar=58+drawRand()*48;
                     const ax1=boss.x+Math.cos(aa)*ar, ay1=boss.y+Math.sin(aa)*ar*0.8;
-                    const ax2=boss.x+Math.cos(aa+0.42+Math.random()*0.28)*(ar-18);
-                    const ay2=boss.y+Math.sin(aa+0.42+Math.random()*0.28)*((ar-18)*0.8);
-                    ctx.strokeStyle=`rgba(150,80,255,${0.28+Math.random()*0.45})`;
+                    const ax2=boss.x+Math.cos(aa+0.42+drawRand()*0.28)*(ar-18);
+                    const ay2=boss.y+Math.sin(aa+0.42+drawRand()*0.28)*((ar-18)*0.8);
+                    ctx.strokeStyle=`rgba(150,80,255,${0.28+drawRand()*0.45})`;
                     ctx.lineWidth=1;
                     ctx.beginPath(); ctx.moveTo(ax1,ay1);
-                    ctx.quadraticCurveTo(boss.x+(Math.random()-0.5)*38,boss.y+(Math.random()-0.5)*38,ax2,ay2);
+                    ctx.quadraticCurveTo(boss.x+(drawRand()-0.5)*38,boss.y+(drawRand()-0.5)*38,ax2,ay2);
                     ctx.stroke();
                 }
             }
@@ -15057,9 +15517,9 @@
             // Damage sparks at low health
             if (boss.health / boss.maxHealth < 0.5) {
                 const di = 1 - (boss.health / boss.maxHealth) * 2;
-                if (Math.random() < di * 0.55) {
-                    const sa=Math.random()*Math.PI*2, sr=38+Math.random()*68;
-                    ctx.fillStyle=`rgba(255,${Math.floor(80+Math.random()*155)},0,0.8)`;
+                if (drawRand() < di * 0.55) {
+                    const sa=drawRand()*Math.PI*2, sr=38+drawRand()*68;
+                    ctx.fillStyle=`rgba(255,${Math.floor(80+drawRand()*155)},0,0.8)`;
                     ctx.fillRect(boss.x+Math.cos(sa)*sr-2, boss.y+Math.sin(sa)*sr*0.8-2, 4, 4);
                 }
                 ctx.fillStyle=`rgba(255,0,0,${di*0.14})`;
@@ -15193,7 +15653,7 @@
                 ctx.beginPath();
                 for (let i=0;i<=segs;i++) {
                     const a=(i/segs)*Math.PI*2;
-                    const w=1+Math.sin(a*5+Date.now()*0.012)*0.1;
+                    const w=1+Math.sin(a*5+game.drawNow*0.012)*0.1;
                     const px=z.x+Math.cos(a)*z.radius*w, py=z.y+Math.sin(a)*z.radius*w;
                     i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
                 }
@@ -15282,8 +15742,8 @@
             // Void stars within portal
             for (let s=0;s<10;s++) {
                 const sa=p.rotation*2+(s/10)*Math.PI*2;
-                const sr=(0.15+Math.random()*0.55)*r;
-                ctx.fillStyle=`rgba(200,150,255,${Math.random()*0.45+0.15})`;
+                const sr=(0.15+drawRand()*0.55)*r;
+                ctx.fillStyle=`rgba(200,150,255,${drawRand()*0.45+0.15})`;
                 ctx.fillRect(p.x+Math.cos(sa)*sr-1, p.y+Math.sin(sa)*sr-1, 2, 2);
             }
             ctx.restore();
@@ -15354,7 +15814,7 @@
                     // Different explosion colors for different bosses
                     const explosionColor = boss.type === 'knight' ? 
                         `rgba(136, 0, 255, ${0.8 * (1 - explosionProgress)})` : 
-                        `rgba(255, ${100 + Math.floor(Math.random() * 155)}, 0, ${0.8 * (1 - explosionProgress)})`;
+                        `rgba(255, ${100 + Math.floor(drawRand() * 155)}, 0, ${0.8 * (1 - explosionProgress)})`;
                     
                     // Explosion flash
                     ctx.fillStyle = explosionColor;
@@ -15410,12 +15870,12 @@
                 // Enhanced sparks and debris for The Knight
                 const sparkCount = boss.type === 'knight' ? 15 : 8;
                 for (let i = 0; i < sparkCount; i++) {
-                    const sparkX = boss.x + (Math.random() - 0.5) * boss.width;
-                    const sparkY = boss.y + (Math.random() - 0.5) * boss.height;
-                    const sparkSize = Math.random() * (boss.type === 'knight' ? 4 : 3) + 1;
+                    const sparkX = boss.x + (drawRand() - 0.5) * boss.width;
+                    const sparkY = boss.y + (drawRand() - 0.5) * boss.height;
+                    const sparkSize = drawRand() * (boss.type === 'knight' ? 4 : 3) + 1;
                     
-                    const sparkColor = boss.type === 'knight' && Math.random() > 0.5 ? 
-                        '#8800ff' : (Math.random() > 0.5 ? '#ffff00' : '#ffffff');
+                    const sparkColor = boss.type === 'knight' && drawRand() > 0.5 ? 
+                        '#8800ff' : (drawRand() > 0.5 ? '#ffff00' : '#ffffff');
                     
                     ctx.fillStyle = sparkColor;
                     ctx.fillRect(sparkX, sparkY, sparkSize, sparkSize);
@@ -15538,8 +15998,28 @@
                 drawDestroyer(boss);
             }
             
-            // VISUAL #8: Boss hit flash — white overlay covering boss area
+            // VISUAL #8 + v59.7b: Boss hit flash — silhouette-accurate when canvas
+            // filters are available (the exact boss art is redrawn in white, so the
+            // flash hugs every spike, tendril and hull line); approximated shapes
+            // remain as the no-filter fallback. The Machine's flash is drawn in
+            // drawBossForeground so it sits on top of the machinery layer.
             if (VISUAL_CONFIG.enemyHitFlash && boss.hitFlashTimer > 0 && !boss.exploding) {
+                if (CTX_FILTER_OK && boss.type !== 'machine') {
+                    ctx.save();
+                    game._silhouetteRedraw = true;
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha *= Math.min(1, boss.hitFlashTimer / 4) * 0.4;
+                    ctx.filter = 'brightness(0) invert(1)';
+                    if (boss.type === 'knight') drawKnight(boss);
+                    else if (boss.type === 'destroyer2') drawDestroyer2(boss);
+                    else if (boss.type === 'destroyer3') drawDestroyer3(boss);
+                    else if (boss.type === 'count') drawCount(boss);
+                    else if (boss.type === 'gatekeeper') drawGatekeeper(boss);
+                    else drawDestroyer(boss);
+                    game._silhouetteRedraw = false;
+                    ctx.restore();
+                    boss.hitFlashTimer -= game.frameScale || 1; // v59.3: frame-rate independent
+                } else if (!CTX_FILTER_OK) {
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
                 const _bossBaseAlpha = (boss.hitFlashTimer / 4) * 0.3;
@@ -15579,6 +16059,11 @@
                 }
                 ctx.restore();
                 boss.hitFlashTimer -= game.frameScale || 1; // v59.3: frame-rate independent
+                } else {
+                    // CTX_FILTER_OK && machine — silhouette flash is drawn in
+                    // drawBossForeground (on top of the machinery); tick timer here
+                    boss.hitFlashTimer -= game.frameScale || 1;
+                }
             }
             // End of drawBoss
         }
@@ -15607,6 +16092,18 @@
                     ctx.globalAlpha *= Math.max(0, 1 - game.boss.blackHoleTimer / 200);
                 }
                 drawMachineOfTheVoidMachinery(game.boss); // This draws the machinery on top
+                // v59.7b: Machine hit flash — exact machinery silhouette in white,
+                // drawn here so it sits on top of the foreground layer
+                if (VISUAL_CONFIG.enemyHitFlash && CTX_FILTER_OK && game.boss.hitFlashTimer > 0 && !game.boss.exploding) {
+                    ctx.save();
+                    game._silhouetteRedraw = true;
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha *= Math.min(1, game.boss.hitFlashTimer / 4) * 0.4;
+                    ctx.filter = 'brightness(0) invert(1)';
+                    drawMachineOfTheVoidMachinery(game.boss);
+                    game._silhouetteRedraw = false;
+                    ctx.restore();
+                }
                 ctx.restore();
             }
         }
@@ -15652,7 +16149,7 @@
             ctx.fillRect(boss.x - 3, boss.y - boss.height / 2, 6, 10);
             
             // Engine exhausts
-            const engineGlow = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
+            const engineGlow = Math.sin(game.drawNow * 0.01) * 0.3 + 0.7;
             ctx.fillStyle = `rgba(0, 100, 255, ${engineGlow})`;
             ctx.fillRect(boss.x - 15, boss.y + boss.height / 2 - 5, 8, 12);
             ctx.fillRect(boss.x + 7, boss.y + boss.height / 2 - 5, 8, 12);
@@ -15683,7 +16180,7 @@
         function drawKnight(boss) {
             // Energy shield effect
             if (boss.shieldActive) {
-                const shieldPulse = Math.sin(Date.now() * 0.02) * 0.3 + 0.7;
+                const shieldPulse = Math.sin(game.drawNow * 0.02) * 0.3 + 0.7;
                 ctx.strokeStyle = `rgba(0, 255, 255, ${shieldPulse})`;
                 ctx.lineWidth = 6;
                 ctx.beginPath();
@@ -15818,7 +16315,7 @@
             ctx.fill();
             
             // Engine exhausts - purple energy with rounded ports
-            const engineGlow = Math.sin(Date.now() * 0.015) * 0.4 + 0.6;
+            const engineGlow = Math.sin(game.drawNow * 0.015) * 0.4 + 0.6;
             ctx.fillStyle = `rgba(136, 0, 255, ${engineGlow})`;
             ctx.beginPath();
             ctx.roundRect(boss.x - 20, boss.y + boss.height / 2 - 8, 10, 16, 2);
@@ -15864,7 +16361,7 @@
 
             
             // Energy field generators - rounded
-            const fieldGlow = Math.sin(Date.now() * 0.02 + boss.x * 0.01) * 0.5 + 0.5;
+            const fieldGlow = Math.sin(game.drawNow * 0.02 + boss.x * 0.01) * 0.5 + 0.5;
             ctx.fillStyle = `rgba(136, 0, 255, ${fieldGlow})`;
             ctx.beginPath();
             ctx.arc(boss.x - 30, boss.y - 30, 4, 0, Math.PI * 2);
@@ -15895,7 +16392,7 @@
                 
                 // Bridge windows - some broken
                 if (explosionProgress < 0.6) {
-                    ctx.fillStyle = Math.random() > explosionProgress ? '#00ffff' : '#ff0000';
+                    ctx.fillStyle = drawRand() > explosionProgress ? '#00ffff' : '#ff0000';
                     ctx.fillRect(boss.x - 20, boss.y - 10, 8, 8);
                     ctx.fillRect(boss.x - 5, boss.y - 10, 10, 8);
                     ctx.fillRect(boss.x + 12, boss.y - 10, 8, 8);
@@ -15910,7 +16407,7 @@
             }
             
             // Engine exhausts - sparking
-            if (Math.random() > explosionProgress) {
+            if (drawRand() > explosionProgress) {
                 const engineFlicker = Math.sin(boss.explosionTimer * 2) * 0.5 + 0.5;
                 ctx.fillStyle = `rgba(255, 100, 0, ${engineFlicker})`;
                 ctx.fillRect(boss.x - 15, boss.y + boss.height / 2 - 5, 8, 12);
@@ -15939,7 +16436,7 @@
                 
                 // Bridge windows - some broken
                 if (explosionProgress < 0.6) {
-                    ctx.fillStyle = Math.random() > explosionProgress ? '#00ffff' : '#ff0000';
+                    ctx.fillStyle = drawRand() > explosionProgress ? '#00ffff' : '#ff0000';
                     ctx.fillRect(boss.x - 30, boss.y - 15, 8, 8);
                     ctx.fillRect(boss.x - 15, boss.y - 15, 10, 8);
                     ctx.fillRect(boss.x + 5, boss.y - 15, 10, 8);
@@ -15955,7 +16452,7 @@
             }
             
             // Engine exhausts - purple sparking
-            if (Math.random() > explosionProgress) {
+            if (drawRand() > explosionProgress) {
                 const engineFlicker = Math.sin(boss.explosionTimer * 2) * 0.5 + 0.5;
                 ctx.fillStyle = `rgba(136, 0, 255, ${engineFlicker})`;
                 ctx.fillRect(boss.x - 20, boss.y + boss.height / 2 - 8, 10, 16);
@@ -15963,7 +16460,7 @@
             }
             
             // Energy conduit sparks
-            if (Math.random() > explosionProgress * 0.7) {
+            if (drawRand() > explosionProgress * 0.7) {
                 ctx.fillStyle = '#ff00ff';
                 ctx.fillRect(boss.x - 50, boss.y - 25, 4, 50);
                 ctx.fillRect(boss.x + 46, boss.y - 25, 4, 50);
@@ -16066,7 +16563,7 @@
             ctx.fillRect(boss.x + 90, boss.y - 10, 30, 20);
             
             // Main body central core (glowing effect)
-            const coreGlow = Math.sin(Date.now() * 0.003) * 0.3 + 0.7;
+            const coreGlow = Math.sin(game.drawNow * 0.003) * 0.3 + 0.7;
             ctx.fillStyle = `rgba(0, 170, 255, ${coreGlow})`;
             ctx.fillRect(boss.x - 15, boss.y - 15, 30, 30);
             
@@ -16079,10 +16576,10 @@
                 ctx.fillRect(boss.x - 90, boss.y - 60, 180, 120);
                 
                 // Sparks from damaged sections
-                if (Math.random() < damageIntensity * 0.2) {
+                if (drawRand() < damageIntensity * 0.2) {
                     ctx.fillStyle = '#ffff00';
-                    const sparkX = boss.x + (Math.random() - 0.5) * 180;
-                    const sparkY = boss.y + (Math.random() - 0.5) * 120;
+                    const sparkX = boss.x + (drawRand() - 0.5) * 180;
+                    const sparkY = boss.y + (drawRand() - 0.5) * 120;
                     ctx.fillRect(sparkX, sparkY, 3, 3);
                 }
             }
@@ -16095,7 +16592,7 @@
                 ctx.fillText(boss.bombCountdown.toString(), boss.x, boss.y - 80);
                 
                 // Countdown warning glow
-                const glowIntensity = Math.sin(Date.now() * 0.01) * 0.5 + 0.5;
+                const glowIntensity = Math.sin(game.drawNow * 0.01) * 0.5 + 0.5;
                 ctx.fillStyle = `rgba(255, 0, 0, ${glowIntensity * 0.3})`;
                 ctx.fillRect(boss.x - 100, boss.y - 70, 200, 140);
             }
@@ -16199,7 +16696,7 @@
             ctx.stroke();
             
             // Futuristic lights and technology
-            const lightGlow = Math.sin(Date.now() * 0.008) * 0.3 + 0.7;
+            const lightGlow = Math.sin(game.drawNow * 0.008) * 0.3 + 0.7;
             
             // Left section lights
             ctx.fillStyle = `rgba(0, 255, 255, ${lightGlow})`;
@@ -16279,7 +16776,7 @@
             ctx.fillRect(rightX + 30, boss.y + 20, 5, 3);
             
             // Engine exhausts with enhanced glow
-            const engineGlow = Math.sin(Date.now() * 0.012) * 0.4 + 0.6;
+            const engineGlow = Math.sin(game.drawNow * 0.012) * 0.4 + 0.6;
             const selfDestructGlow = boss.selfDestructActive ? Math.sin(boss.selfDestructTimer * 0.2) * 0.5 + 0.5 : 0;
             
             // Left engine
@@ -16323,7 +16820,7 @@
             const frameScale = game.frameScale || 1;
             
             // Draw cluster bombs and laser bombs
-            if (boss.clusterBombs) {
+            if (boss.clusterBombs && !game._silhouetteRedraw) { // v59.7b: bombs aren't part of the hull silhouette
                 boss.clusterBombs.forEach(bomb => {
                     if (!bomb.exploded) {
                         // Cluster bomb - small orange/red bomb
@@ -16358,12 +16855,12 @@
                         ctx.arc(bomb.x, bomb.y, explosionRadius * 0.4, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        bomb.explosionTimer -= frameScale;
+                        if (!game._silhouetteRedraw) bomb.explosionTimer -= frameScale; // v59.7b: skip on flash redraw pass
                     }
                 });
             }
             
-            if (boss.laserBombs) {
+            if (boss.laserBombs && !game._silhouetteRedraw) { // v59.7b: bombs aren't part of the hull silhouette
                 boss.laserBombs.forEach(bomb => {
                     if (!bomb.exploded) {
                         // Laser bomb - flashing orange/red
@@ -16400,7 +16897,7 @@
                         ctx.arc(bomb.x, bomb.y, explosionRadius * 0.4, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        bomb.explosionTimer -= frameScale;
+                        if (!game._silhouetteRedraw) bomb.explosionTimer -= frameScale; // v59.7b: skip on flash redraw pass
                     }
                 });
             }
@@ -16845,7 +17342,7 @@
                 // Slowly spin when not firing
                 targetAngle += boss.laserTurretSpeed * frameScale;
             }
-            boss.laserTurretAngle = targetAngle;
+            if (!game._silhouetteRedraw) boss.laserTurretAngle = targetAngle; // v59.7b: don't double-spin on flash redraw
             
             const turretSize = 20;
             
@@ -17030,7 +17527,7 @@
                     // Warning sparks in final moments
                     if (glowProgress > 0.8) {
                         for (let i = 0; i < 6; i++) {
-                            const sparkAngle = (Date.now() * 0.01 + i * Math.PI / 3) % (Math.PI * 2);
+                            const sparkAngle = (game.drawNow * 0.01 + i * Math.PI / 3) % (Math.PI * 2);
                             const sparkDistance = bomb.size + 8;
                             const sparkX = bomb.x + Math.cos(sparkAngle) * sparkDistance;
                             const sparkY = bomb.y + Math.sin(sparkAngle) * sparkDistance;
@@ -17119,7 +17616,7 @@
             
             // Much darker and more swirling void core at center
             const coreRadius = 45;
-            const voidIntensity = Math.sin(Date.now() * 0.008) * 0.4 + 0.6;
+            const voidIntensity = Math.sin(game.drawNow * 0.008) * 0.4 + 0.6;
             
             // Outer void ring with enhanced darkness
             ctx.save();
@@ -17187,7 +17684,7 @@
                 for (let layer = 0; layer < 6; layer++) {
                     const layerRadius = baseRadius * (0.4 + layer * 0.15);
                     const layerIntensity = chargeIntensity * (1 - layer * 0.15);
-                    const layerVariation = Math.sin(Date.now() * 0.01 + layer) * 15;
+                    const layerVariation = Math.sin(game.drawNow * 0.01 + layer) * 15;
                     
                     // Create organic blob shapes instead of rectangles
                     ctx.fillStyle = `rgba(255, 0, 255, ${layerIntensity * 0.3})`;
@@ -17224,7 +17721,7 @@
                     // Create wavy tendrils
                     const midX = boss.x + Math.cos(tendrilAngle) * tendrilLength * 0.5;
                     const midY = boss.y + Math.sin(tendrilAngle) * tendrilLength * 0.5;
-                    const waveOffset = Math.sin(Date.now() * 0.008 + tendril) * 30;
+                    const waveOffset = Math.sin(game.drawNow * 0.008 + tendril) * 30;
                     const waveX = midX + Math.cos(tendrilAngle + Math.PI/2) * waveOffset;
                     const waveY = midY + Math.sin(tendrilAngle + Math.PI/2) * waveOffset;
                     
@@ -17251,10 +17748,10 @@
                 ctx.fillRect(boss.x - 110, boss.y - 90, 220, 180);
                 
                 // Crackling void sparks
-                if (Math.random() < damageIntensity * 0.3) {
+                if (drawRand() < damageIntensity * 0.3) {
                     for (let i = 0; i < 3; i++) {
-                        const sparkX = boss.x + (Math.random() - 0.5) * 200;
-                        const sparkY = boss.y + (Math.random() - 0.5) * 160;
+                        const sparkX = boss.x + (drawRand() - 0.5) * 200;
+                        const sparkY = boss.y + (drawRand() - 0.5) * 160;
                         ctx.fillStyle = '#cc00ff';
                         ctx.fillRect(sparkX, sparkY, 4, 4);
                     }
@@ -17272,7 +17769,7 @@
             }
             
             // Attack pause indicator
-            const timeSinceLastShot = Date.now() - boss.lastShot;
+            const timeSinceLastShot = game.drawNow - boss.lastShot;
             const shootRate = boss.finalAttackCharging ? 99999 : 
                              boss.phase === 3 ? 120 : boss.phase === 2 ? 180 : 240;
             const attackPause = boss.phase === 3 ? 1800 : boss.phase === 2 ? 2400 : 3000;
@@ -17461,7 +17958,7 @@
                 ctx.rotate(powerup.rotation);
                 
                 // Subtle pulsing effect
-                const pulse = Math.sin(Date.now() * 0.008 + powerup.x * 0.1) * 0.2 + 0.8;
+                const pulse = Math.sin(game.drawNow * 0.008 + powerup.x * 0.1) * 0.2 + 0.8;
                 
                 // Powerup colors and shapes
                 switch(powerup.type) {
@@ -18395,10 +18892,10 @@
                             
                             // Color based on whether lance is targeted
                             if (lance.isTargeted) {
-                                const hue = 320 + Math.sin(Date.now() * 0.01 + i * 0.5) * 20; // Pink/red homing trail
+                                const hue = 320 + Math.sin(game.drawNow * 0.01 + i * 0.5) * 20; // Pink/red homing trail
                                 ctx.strokeStyle = `hsla(${hue}, 100%, 70%, ${alpha})`;
                             } else {
-                                const hue = 280 + Math.sin(Date.now() * 0.008 + i * 0.3) * 15; // Purple normal trail
+                                const hue = 280 + Math.sin(game.drawNow * 0.008 + i * 0.3) * 15; // Purple normal trail
                                 ctx.strokeStyle = `hsla(${hue}, 100%, 70%, ${alpha})`;
                             }
                             
@@ -18946,7 +19443,7 @@
                                 speedX: Math.cos(ma) * 3.2, speedY: Math.sin(ma) * 3.2, damage: 30
                             });
                         }
-                        createHitExplosion(bullet.x, bullet.y);
+                        createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                         game.enemyBullets.splice(i, 1);
                         continue;
                     }
@@ -18973,7 +19470,7 @@
                             speedX: Math.cos(fa) * 3.0, speedY: Math.sin(fa) * 3.0, damage: 28
                         });
                     }
-                    createHitExplosion(bullet.x, bullet.y);
+                    createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                     game.enemyBullets.splice(i, 1);
                     continue;
                 }
@@ -19042,6 +19539,28 @@
                 rim(w / 2, 'rgba(60, 0, 0, 0.85)');
                 circle(w / 3, '#ff6666');
                 circle(w / 6, '#ffffff');
+            } else if (kind === 'laser') {
+                // v59.7 (#13): red laser orb — glow baked (was shadowBlur 15/bullet/frame)
+                c.shadowColor = '#ff0000';
+                c.shadowBlur = 15;
+                circle(w / 2, '#ff0000');
+                c.shadowBlur = 0;
+                circle(w / 4, 'rgba(255, 255, 255, 0.8)');
+            } else if (kind === 'advLaser') {
+                // v59.7 (#13): advanced laser orb — glow baked (was shadowBlur 25)
+                c.shadowColor = '#ff4400';
+                c.shadowBlur = 25;
+                circle(w / 2 + 5, 'rgba(255, 68, 0, 0.6)');
+                c.shadowBlur = 0;
+                circle(w / 2, '#ff6400');
+                circle(w / 4, 'rgba(255, 255, 100, 0.9)');
+            } else if (kind === 'laserPulse') {
+                // v59.7 (#13): pulse core — purple orb + white centre, glow baked
+                c.shadowColor = '#8800ff';
+                c.shadowBlur = 12;
+                circle(w / 2, '#8800ff');
+                c.shadowBlur = 0;
+                circle(w / 4, '#ffffff');
             } else if (kind === 'regularPlus') {
                 const bh = h || w;
                 c.shadowColor = '#ff6600';
@@ -19065,6 +19584,16 @@
 
         // Draw only enemy bullets and boss bomb (used while grayscale is active)
         function drawEnemyBullets() {
+            // VISUAL #19 (v59.7): enemy muzzle flashes, drawn beneath the bullets
+            if (VISUAL_CONFIG.enemyMuzzleFlash && game.enemyMuzzleFlashes && game.enemyMuzzleFlashes.length > 0) {
+                for (const f of game.enemyMuzzleFlashes) {
+                    const a = Math.max(0, f.life / f.maxLife);
+                    ctx.fillStyle = `rgba(255, 200, 90, ${(a * 0.5).toFixed(3)})`;
+                    ctx.beginPath(); ctx.arc(f.x, f.y, 7 * a + 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = `rgba(255, 255, 220, ${(a * 0.7).toFixed(3)})`;
+                    ctx.beginPath(); ctx.arc(f.x, f.y, 3 * a + 1, 0, Math.PI * 2); ctx.fill();
+                }
+            }
             // Enemy bullets (draw under grayscale when slow effect active)
             game.enemyBullets.forEach(bullet => {
                 if (bullet.isMissileLauncherMissile) {
@@ -19119,73 +19648,38 @@
                 }
 
                 if (bullet.isLaser) {
+                    // v59.7 (#13): glow baked into cached sprite — one drawImage per bullet
                     const laserAlpha = bullet.life ? (bullet.life / 60) : 1;
-                    ctx.shadowColor = '#ff0000';
-                    ctx.shadowBlur = 15;
-                    ctx.fillStyle = `rgba(255, 0, 0, ${laserAlpha})`;
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 2, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.fillStyle = `rgba(255, 255, 255, ${laserAlpha * 0.8})`;
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 4, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.shadowBlur = 0;
+                    const spr = _getBulletSprite('laser', bullet.width);
+                    const prevGA = ctx.globalAlpha;
+                    ctx.globalAlpha = prevGA * Math.max(0, Math.min(1, laserAlpha));
+                    ctx.drawImage(spr.canvas, bullet.x - spr.half, bullet.y - spr.half);
+                    ctx.globalAlpha = prevGA;
                 } else if (bullet.isAdvancedLaser) {
+                    // v59.7 (#13): glow baked into cached sprite — one drawImage per bullet
                     const laserAlpha = bullet.life ? (bullet.life / 75) : 1;
-                    ctx.shadowColor = '#ff4400';
-                    ctx.shadowBlur = 25;
-
-                    ctx.fillStyle = `rgba(255, 68, 0, ${laserAlpha * 0.6})`;
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 2 + 5, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.fillStyle = `rgba(255, 100, 0, ${laserAlpha})`;
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 2, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.fillStyle = `rgba(255, 255, 100, ${laserAlpha * 0.9})`;
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 4, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.shadowBlur = 0;
+                    const spr = _getBulletSprite('advLaser', bullet.width);
+                    const prevGA = ctx.globalAlpha;
+                    ctx.globalAlpha = prevGA * Math.max(0, Math.min(1, laserAlpha));
+                    ctx.drawImage(spr.canvas, bullet.x - spr.half, bullet.y - spr.half);
+                    ctx.globalAlpha = prevGA;
                 } else if (bullet.isLaserPulse) {
+                    // v59.7 (#13): baked core sprite + shadow-free expanding ring
+                    // (bloom faked with a wide soft stroke under the bright one)
                     const pulseAlpha = bullet.life ? (bullet.life / 90) : 1;
                     const pulseSize = (90 - bullet.life) * 0.5 + bullet.width / 2;
-
-                    ctx.shadowColor = '#ff8800';
-                    ctx.shadowBlur = 30;
-                    ctx.strokeStyle = `rgba(255, 136, 0, ${pulseAlpha * 0.8})`;
+                    ctx.strokeStyle = `rgba(255, 136, 0, ${(pulseAlpha * 0.25).toFixed(3)})`;
+                    ctx.lineWidth = 7;
+                    ctx.beginPath();
+                    ctx.arc(bullet.x, bullet.y, pulseSize, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(255, 136, 0, ${(pulseAlpha * 0.8).toFixed(3)})`;
                     ctx.lineWidth = 3;
                     ctx.beginPath();
                     ctx.arc(bullet.x, bullet.y, pulseSize, 0, Math.PI * 2);
                     ctx.stroke();
-
-                    ctx.fillStyle = `rgba(255, 200, 0, ${pulseAlpha})`;
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 2, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.shadowBlur = 0;
-
-                    ctx.shadowColor = '#8800ff';
-                    ctx.shadowBlur = 12;
-                    ctx.fillStyle = '#8800ff';
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 2, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.fillStyle = '#ffffff';
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.width / 4, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.shadowBlur = 0;
+                    const spr = _getBulletSprite('laserPulse', bullet.width);
+                    ctx.drawImage(spr.canvas, bullet.x - spr.half, bullet.y - spr.half);
                 } else if (bullet.isVoidBullet) {
                     // v59.3: glow baked into cached sprites — one drawImage per bullet
                     if (bullet.isFastVoid) {
@@ -19241,7 +19735,7 @@
                             // Post-trigger flame: intense orange fire, grows and brightens further with distance
                             const distRatio = Math.min(1, rppDist / canvas.height);
                             const flameSize = bullet.width * (1.2 + distRatio * 0.8);
-                            const flicker = 0.88 + Math.sin(Date.now() * 0.045) * 0.12;
+                            const flicker = 0.88 + Math.sin(game.drawNow * 0.045) * 0.12;
                             ctx.shadowColor = '#ff5500';
                             ctx.shadowBlur = (24 + distRatio * 22) * flicker;
                             // Outer dark body
@@ -19329,13 +19823,13 @@
                     // Blink speeds up as the timeout nears
                     const mineBlinkRate = bullet.mineAge > 280 ? 0.04 : 0.012;
                     const armed = bullet.mineAge > 30;
-                    if (Math.sin(Date.now() * mineBlinkRate) > 0) {
+                    if (Math.sin(game.drawNow * mineBlinkRate) > 0) {
                         ctx.fillStyle = armed ? '#ff3300' : '#ffaa00';
                         ctx.beginPath(); ctx.arc(bullet.x, bullet.y, 2, 0, Math.PI * 2); ctx.fill();
                     }
                 } else if (bullet.isLeechOrb) {
                     // v59.4: leech orb — pulsing pink parasite
-                    const orbPulse = 1 + Math.sin(Date.now() * 0.02) * 0.18;
+                    const orbPulse = 1 + Math.sin(game.drawNow * 0.02) * 0.18;
                     ctx.fillStyle = 'rgba(255, 102, 204, 0.25)';
                     ctx.beginPath(); ctx.arc(bullet.x, bullet.y, 9 * orbPulse, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = '#cc3399';
@@ -19368,7 +19862,7 @@
                 } else if (bullet.isLaserWarning) {
                     // Brief guidance line before laser
                     const alpha = bullet.life ? (bullet.life / bullet.maxLife) : 0;
-                    const flashIntensity = Math.sin(Date.now() * 0.03) * 0.5 + 0.5;
+                    const flashIntensity = Math.sin(game.drawNow * 0.03) * 0.5 + 0.5;
                     
                     if (alpha > 0) {
                         ctx.save();
@@ -19516,7 +20010,7 @@
                     ctx.arc(bomb.x, bomb.y, 12, 0, Math.PI * 2);
                     ctx.fill();
 
-                    const glowIntensity = Math.sin(Date.now() * 0.02) * 0.5 + 0.5;
+                    const glowIntensity = Math.sin(game.drawNow * 0.02) * 0.5 + 0.5;
                     ctx.fillStyle = `rgba(255, 0, 0, ${glowIntensity * 0.6})`;
                     ctx.beginPath();
                     ctx.arc(bomb.x, bomb.y, 18, 0, Math.PI * 2);
@@ -19667,7 +20161,7 @@
         }
 
         function drawVoidAsteroidEffects() {
-            const t = Date.now() * 0.004;
+            const t = game.drawNow * 0.004;
 
             // Draw charge group connection lines and halos
             if (game.voidChargeGroups && game.voidChargeGroups.length > 0) {
@@ -19683,7 +20177,7 @@
                         const segmentLength = 4 + chargeRatio * 4;
                         const gapLength = 6 + (1 - chargeRatio) * 8;
                         ctx.setLineDash([segmentLength, gapLength]);
-                        ctx.lineDashOffset = -(Date.now() * 0.03 + index * 6) % (segmentLength + gapLength);
+                        ctx.lineDashOffset = -(game.drawNow * 0.03 + index * 6) % (segmentLength + gapLength);
                         ctx.shadowColor = '#b040ff';
                         ctx.shadowBlur = 6 + chargeRatio * 10;
                         ctx.strokeStyle = `rgba(190, 80, 255, ${lineAlpha * 0.45})`;
@@ -19836,7 +20330,7 @@
         // Draw only player bullets and tracking bullets (and respect rapidFire visuals)
         function drawVoidProtectorShields() {
             if (!game.voidProtectorShields || !game.voidProtectorShields.length) return;
-            const t = Date.now() * 0.003;
+            const t = game.drawNow * 0.003;
 
             game.voidProtectorShields.forEach(shield => {
                 if (!shield.owner && !shield.dying) return;
@@ -20023,11 +20517,25 @@
 
             game.bullets.forEach(bullet => {
                 if (bullet.isCurvedGun) return; // already drawn in pass 1
+                // VISUAL #21 (v59.7): subtle two-step fading tail behind regular
+                // bullets — low alpha and narrow so it reads as motion, not glow
+                if (VISUAL_CONFIG.bulletTrails && !bullet.isTrackingOverflow) {
+                    const _rapid = game.player.rapidFire > 0;
+                    const _sb = ctx.shadowBlur;
+                    ctx.shadowBlur = 0; // keep the tail glow-free
+                    ctx.fillStyle = _rapid ? 'rgba(255, 170, 0, 0.20)' : 'rgba(0, 255, 255, 0.18)';
+                    ctx.fillRect(bullet.x - bullet.width * 0.35, bullet.y + bullet.height / 2, bullet.width * 0.7, 6);
+                    ctx.fillStyle = _rapid ? 'rgba(255, 170, 0, 0.09)' : 'rgba(0, 255, 255, 0.08)';
+                    ctx.fillRect(bullet.x - bullet.width * 0.225, bullet.y + bullet.height / 2 + 6, bullet.width * 0.45, 5);
+                    // restore body colour + glow for the bullet itself
+                    ctx.shadowBlur = _sb;
+                    ctx.fillStyle = _rapid ? '#ffaa00' : '#00ffff';
+                }
                 if (bullet.isTrackingOverflow) {
                     // Large glowing tracking overflow bullet - reduced intensity
                     const distanceTraveled = bullet.startY - bullet.y;
                     const glowIntensity = Math.min(0.8, 0.4 + (distanceTraveled / 500)); // Reduced max glow (was 1.0 and 0.5)
-                    const pulseSize = 1 + Math.sin(Date.now() * 0.01) * 0.2; // Reduced pulse (was 0.3)
+                    const pulseSize = 1 + Math.sin(game.drawNow * 0.01) * 0.2; // Reduced pulse (was 0.3)
                     
                     ctx.shadowColor = '#ff00ff';
                     ctx.shadowBlur = 15 * glowIntensity; // Reduced blur (was 20)
@@ -20107,6 +20615,14 @@
             }
             if (enemy.type === 'defender_stealth_fighter') addStealthDyingSprite(enemy);
             createDeathExplosion(enemy.x, enemy.y, enemy.type);
+            // VISUAL #22 (v59.7): brief white screen flash when a large enemy dies
+            if (VISUAL_CONFIG.bigKillFlash) {
+                const _kfTpl = enemyTypes[enemy.type];
+                if ((_kfTpl && _kfTpl.health >= 300) || enemy.type === 'dreadnought' ||
+                    enemy.type === 'void_dreadnought' || enemy.type === 'warship' || enemy.type === 'elite') {
+                    game.killFlash = Math.max(game.killFlash || 0, 0.14);
+                }
+            }
 
             // Special drone death explosion - shoots bullets in all directions
             if (enemy.type === 'drone' || enemy.type === 'void_drone') {
@@ -20316,7 +20832,7 @@
                         const thickness = 18 + (bullet.width || 8) * 0.5;
                         if (Math.abs(cdist - ARC_R) < thickness && bullet.y > shield.y - 90 && Math.abs(cdx) < 180) {
                             shield.health -= bullet.damage;
-                            createHitExplosion(bullet.x, bullet.y);
+                            createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                             playProtectorShieldHit(shield);
                             if (shield.health <= 0 && !shield.dying) {
                                 const owner = shield.owner;
@@ -20345,7 +20861,7 @@
                     // flank it or wait for the vent cycle (tracking shots that dive work too)
                     if (enemy.type === 'aegis' && enemy.shieldUp && bullet.speedY < 0) {
                         enemy.aegisBlocked = (enemy.aegisBlocked || 0) + 1; // 12 soaked hits staggers the shield
-                        createHitExplosion(bullet.x, bullet.y + 4);
+                        createHitExplosion(bullet.x, bullet.y + 4, bullet.speedX, bullet.speedY);
                         if (game.particles.length < 350) {
                             game.particles.push({ x: bullet.x, y: bullet.y + 6, speedX: (Math.random() - 0.5) * 2, speedY: 1.5, life: 14, maxLife: 14, color: '#ffcc66', size: 2 });
                         }
@@ -20366,7 +20882,7 @@
                     // Sandbox: clamp enemy health to 1 so enemies never die
                     if (game.sandboxInvincibleEnemies) enemy.health = Math.max(1, enemy.health);
                     playControlledHumanHitSound(enemy, enemy.health <= 0);
-                    createHitExplosion(bullet.x, bullet.y);
+                    createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
 
                     if (enemy.health <= 0) {
                         // If the killing bullet was part of a burst, chain the next-stage burst
@@ -20393,7 +20909,7 @@
                         const asteroid = game.asteroids[ai];
                         if (isColliding(bullet, asteroid)) {
                             playSfxVariant('Asteroid_Break', 0.52, 0.1, 0.09); // v59.5: rocky crumble
-                            createHitExplosion(bullet.x, bullet.y);
+                            createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                             game.asteroids.splice(ai, 1);
                             for (let p = 0; p < 10; p++) {
                                 const ang = Math.random() * Math.PI * 2;
@@ -20411,14 +20927,14 @@
                 if (game.boss && !game.boss.exploding && !game.boss.blackHolePhase && isColliding(bullet, game.boss)) {
                     if (game.boss.shieldActive && game.boss.type === 'knight' && !bullet.isTrackingOverflow) {
                         // Shield blocks the bullet
-                        createHitExplosion(bullet.x, bullet.y);
+                        createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                     } else {
                         const bossDamage = bullet.isTrackingOverflow ? Math.floor(bullet.damage * 0.4) : bullet.damage;
                         game.boss.health -= bossDamage;
                         if (VISUAL_CONFIG.enemyHitFlash) game.boss.hitFlashTimer = 4;
                         // Sandbox: keep boss alive when enemy invincibility is active
                         if (game.sandboxInvincibleEnemies) game.boss.health = Math.max(1, game.boss.health);
-                        createHitExplosion(bullet.x, bullet.y);
+                        createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
 
                         if (bullet.isTrackingOverflow && document.getElementById('bossHealthFill')) {
                             document.getElementById('bossHealthFill').style.width = (game.boss.health / game.boss.maxHealth) * 100 + '%';
@@ -20452,7 +20968,7 @@
                         const thickness = 18 + (bullet.width || 8) * 0.5;
                         if (Math.abs(cdist - ARC_R) < thickness && bullet.y > shield.y - 90 && Math.abs(cdx) < 180) {
                             shield.health -= bullet.damage;
-                            createHitExplosion(bullet.x, bullet.y);
+                            createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                             playProtectorShieldHit(shield);
                             if (shield.health <= 0 && !shield.dying) {
                                 const owner = shield.owner;
@@ -20481,7 +20997,7 @@
                     // flank it or wait for the vent cycle (tracking shots that dive work too)
                     if (enemy.type === 'aegis' && enemy.shieldUp && bullet.speedY < 0) {
                         enemy.aegisBlocked = (enemy.aegisBlocked || 0) + 1; // 12 soaked hits staggers the shield
-                        createHitExplosion(bullet.x, bullet.y + 4);
+                        createHitExplosion(bullet.x, bullet.y + 4, bullet.speedX, bullet.speedY);
                         if (game.particles.length < 350) {
                             game.particles.push({ x: bullet.x, y: bullet.y + 6, speedX: (Math.random() - 0.5) * 2, speedY: 1.5, life: 14, maxLife: 14, color: '#ffcc66', size: 2 });
                         }
@@ -20501,7 +21017,7 @@
                     // Sandbox: clamp enemy health to 1 so enemies never die
                     if (game.sandboxInvincibleEnemies) enemy.health = Math.max(1, enemy.health);
                     playControlledHumanHitSound(enemy, enemy.health <= 0);
-                    createHitExplosion(bullet.x, bullet.y);
+                    createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
 
                     if (enemy.health <= 0) {
                         handleEnemyDeath(enemy, enemyIndex);
@@ -20516,13 +21032,13 @@
                     // Check if boss has active shield (Knight only)
                     if (game.boss.shieldActive && game.boss.type === 'knight') {
                         // Shield blocks the bullet
-                        createHitExplosion(bullet.x, bullet.y);
+                        createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                     } else {
                         game.boss.health -= bullet.damage;
                         if (VISUAL_CONFIG.enemyHitFlash) game.boss.hitFlashTimer = 4;
                         // Sandbox: keep boss alive when enemy invincibility is active
                         if (game.sandboxInvincibleEnemies) game.boss.health = Math.max(1, game.boss.health);
-                        createHitExplosion(bullet.x, bullet.y);
+                        createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
 
                         if (game.boss.health <= 0 && !game.boss.selfDestructExploding) {
                             handleBossDeath();
@@ -20538,7 +21054,7 @@
                         const asteroid = game.asteroids[ai];
                         if (isColliding(bullet, asteroid)) {
                             playSfxVariant('Asteroid_Break', 0.52, 0.1, 0.09); // v59.5: rocky crumble
-                            createHitExplosion(bullet.x, bullet.y);
+                            createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
                             game.asteroids.splice(ai, 1);
                             for (let p = 0; p < 10; p++) {
                                 const ang = Math.random() * Math.PI * 2;
@@ -20822,15 +21338,27 @@
         }
         
         // Particle effects - balanced for performance and visual quality
-        function createHitExplosion(x, y) {
+        function createHitExplosion(x, y, dirX, dirY) {
             // Play metallic impact sound
             playBulletImpactSound();
-            
+
             if (game.particles.length > 300) return;
-            
+
+            // VISUAL #18 (v59.7): when the shot direction is known, sparks splash
+            // back against it (like ricochets off a hull) instead of a uniform ring
+            const hasDir = VISUAL_CONFIG.directionalSparks && (dirX || dirY) &&
+                isFinite(dirX) && isFinite(dirY);
+            const backAngle = hasDir ? Math.atan2(-dirY, -dirX) : 0;
             for (let i = 0; i < 8; i++) {
-                const angle = (i / 8) * Math.PI * 2;
-                const speed = Math.random() * 1.5 + 0.5;
+                let angle, speed;
+                if (hasDir) {
+                    // ~100° cone biased back along the incoming shot
+                    angle = backAngle + (i / 7 - 0.5) * 1.8 + (Math.random() - 0.5) * 0.35;
+                    speed = Math.random() * 1.8 + 0.8;
+                } else {
+                    angle = (i / 8) * Math.PI * 2;
+                    speed = Math.random() * 1.5 + 0.5;
+                }
                 spawnParticle({
                     x: x,
                     y: y,
@@ -20840,6 +21368,17 @@
                     maxLife: 30,
                     size: Math.random() * 2 + 1,
                     color: Math.random() < 0.8 ? '#ff6600' : '#ffaa00'
+                });
+            }
+            // VISUAL #18: brief white glint at the contact point
+            if (VISUAL_CONFIG.directionalSparks) {
+                spawnParticle({
+                    x: x, y: y,
+                    speedX: hasDir ? Math.cos(backAngle) * 0.4 : 0,
+                    speedY: hasDir ? Math.sin(backAngle) * 0.4 : 0,
+                    life: 7, maxLife: 7,
+                    size: 3.5,
+                    color: '#ffffff'
                 });
             }
         }
@@ -20858,7 +21397,7 @@
             
             // Create vertical wave pulses that move horizontally away from the ship
             for (let wave = 0; wave < 4; wave++) {
-                setTimeout(() => {
+                scheduleEffect(() => {
                     if (game.particles.length > 350) return;
                     
                     // Create vertical line of particles for each wave
@@ -20978,11 +21517,17 @@
                         const ringRadius = ring * 24; // Consistent radius to reduce extreme spreads
                         const ringsParticles = 8 + Math.floor(ring * 2.5); // Slightly fewer particles for balance
                         
-                        setTimeout(() => {
+                        scheduleEffect(() => {
                             for (let i = 0; i < ringsParticles; i++) {
                                 const angle = (i / ringsParticles) * Math.PI * 2 + (ring * 0.5);
                                 const speed = (Math.random() * 2.4 + 2.2) * (1 + ring * 0.4); // Controlled speed for consistent spread
-                                
+                                // v59.7b: offsetX/offsetY were never defined (silent
+                                // ReferenceError under setTimeout — pattern 1 never
+                                // spawned a single particle); start each particle on
+                                // its ring radius as ringRadius always intended
+                                const offsetX = Math.cos(angle) * ringRadius;
+                                const offsetY = Math.sin(angle) * ringRadius;
+
                                 spawnParticle({
                                     x: x + offsetX,
                                     y: y + offsetY,
@@ -20999,7 +21544,7 @@
                 } else if (explosionPattern === 1) {
                     // Pattern 2: Burst pattern - intense center explosion with increased spread
                     for (let burst = 0; burst < 3; burst++) {
-                        setTimeout(() => {
+                        scheduleEffect(() => {
                             const burstParticles = 18 + burst * 9; // Reduced by ~10% (was 20 + burst * 10)
                             for (let i = 0; i < burstParticles; i++) {
                                 const angle = (i / burstParticles) * Math.PI * 2 + Math.random() * 0.5;
@@ -21024,7 +21569,7 @@
                     const spiralArms = 4;
                     for (let arm = 0; arm < spiralArms; arm++) {
                         for (let point = 0; point < 12; point++) {
-                            setTimeout(() => {
+                            scheduleEffect(() => {
                                 const baseAngle = (arm / spiralArms) * Math.PI * 2;
                                 const spiralAngle = baseAngle + (point * 0.3);
                                 const radius = point * 10 + 12; // Increased radius for wider spread (was 8 + 10)
@@ -21046,7 +21591,7 @@
                 }
                 
                 // Add bigger debris chunks flying outward with increased spread
-                setTimeout(() => {
+                scheduleEffect(() => {
                     for (let i = 0; i < 6; i++) { // Increased from 4
                         const angle = (i / 6) * Math.PI * 2;
                         const speed = Math.random() * 4.5 + 3.5; // Increased speed for wider spread
@@ -21070,7 +21615,7 @@
                 
                 // Create more central core explosions with reduced spread
                 for (let core = 0; core < 3; core++) { // Increased back to 3 
-                    setTimeout(() => {
+                    scheduleEffect(() => {
                         for (let i = 0; i < 15; i++) { // Increased from 10
                             const angle = (i / 15) * Math.PI * 2;
                             const speed = Math.random() * 3.2 + 2.0; // Reduced speed for tighter spread (was 4.2 + 2.5)
@@ -21295,10 +21840,10 @@
                 }
 
                 // Wave 1 — primary hull detonation (wider, medium speed)
-                setTimeout(() => { spawnWaveBurst(55, 1.0, 1.0, 5, 13); }, 80);
+                scheduleEffect(() => { spawnWaveBurst(55, 1.0, 1.0, 5, 13); }, 80);
 
                 // Wave 2 — deep structural debris (slow, large chunks, long-lived)
-                setTimeout(() => {
+                scheduleEffect(() => {
                     spawnWaveBurst(40, 0.6, 1.6, 8, 18);
                     // Dark grey metal debris
                     for (let i = 0; i < 14; i++) {
@@ -21314,7 +21859,7 @@
                 }, 180);
 
                 // Wave 3 — trailing smoke/ember cloud (very slow, small, long life)
-                setTimeout(() => { spawnWaveBurst(35, 0.4, 2.0, 3, 7); }, 320);
+                scheduleEffect(() => { spawnWaveBurst(35, 0.4, 2.0, 3, 7); }, 320);
 
                 // Screen shake — big impact
                 if (!game.shockScreenShake || game.shockScreenShake < 24) {
@@ -21382,8 +21927,9 @@
                 speed: 0.2,
                 spinAngle: Math.random() * Math.PI * 2,
                 radius: 28 + Math.random() * 12,
-                spawnTimer: Date.now() - 2500,
-                spawnInterval: 4500 + Math.random() * 3500,
+                // v59.7: game-time cooldown in frames (was wall-clock spawnTimer/spawnInterval);
+                // first wave in ~2–5.5s of game time, matching the old Date.now offset
+                spawnCooldown: (2000 + Math.random() * 3500) / (1000 / 60),
                 life: 1200 + Math.floor(Math.random() * 600),
                 maxLife: 1800,
                 state: 'open',
@@ -21441,7 +21987,10 @@
                     p.y += p.speed * frameScale;
                     p.life -= frameScale;
                     // Spawn enemies periodically
-                    if (now - p.spawnTimer > p.spawnInterval && game.enemies.length < 30) {
+                    // v59.7: game-time cooldown (was Date.now-based — didn't respect slow-motion)
+                    if (p.spawnCooldown === undefined) p.spawnCooldown = 0;
+                    p.spawnCooldown -= frameScale;
+                    if (p.spawnCooldown <= 0 && game.enemies.length < 30) {
                         const type = VG_VOID_CORRUPTED[Math.floor(Math.random() * VG_VOID_CORRUPTED.length)];
                         const et = enemyTypes[type];
                         if (et) {
@@ -21459,8 +22008,7 @@
                             };
                             game.enemies.push(newEnemy);
                         }
-                        p.spawnTimer = now;
-                        p.spawnInterval = 4500 + Math.random() * 3500;
+                        p.spawnCooldown = (4500 + Math.random() * 3500) / (1000 / 60);
                     }
                     if (p.y > canvas.height + 60 || p.life <= 0) {
                         game.generatorPortals.splice(i, 1);
@@ -22309,7 +22857,7 @@
                 const ringRadius = ring * 8; // Reduced spread (was 12)
                 const ringParticles = 4 + ring * 1; // Fewer particles per ring (was 6 + ring * 1)
                 
-                setTimeout(() => {
+                scheduleEffect(() => {
                     for (let i = 0; i < ringParticles; i++) {
                         const angle = (i / ringParticles) * Math.PI * 2;
                         const speed = (Math.random() * 1.5 + 2) * (1 + ring * 0.2); // Reduced speed
@@ -22401,7 +22949,7 @@
                     
                     // Add swirl effect
                     for (let swirl = 0; swirl < 4; swirl++) {
-                        const swirlAngle = (swirl / 4) * Math.PI * 2 + Date.now() * 0.01;
+                        const swirlAngle = (swirl / 4) * Math.PI * 2 + game.drawNow * 0.01;
                         const swirlRadius = flashSize * 0.6;
                         const swirlX = particle.x + Math.cos(swirlAngle) * swirlRadius;
                         const swirlY = particle.y + Math.sin(swirlAngle) * swirlRadius;
@@ -22411,41 +22959,6 @@
                         ctx.arc(swirlX, swirlY, 3, 0, Math.PI * 2); // Slightly larger
                         ctx.fill();
                     }
-                } else if (particle.type === 'blackHole') {
-                    const holeSize = particle.size * alpha;
-
-                    // Validate hole size
-                    if (!isFinite(holeSize) || holeSize <= 0) {
-                        return;
-                    }
-                    
-                    // Draw huge bright warning circle first
-                    ctx.fillStyle = particle.isEntrance ? '#ff0000' : '#00ff00'; // Red for entrance, green for exit
-                    ctx.beginPath();
-                    ctx.arc(particle.x, particle.y, holeSize + 20, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Draw yellow warning ring
-                    ctx.fillStyle = '#ffff00';
-                    ctx.beginPath();
-                    ctx.arc(particle.x, particle.y, holeSize + 10, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Draw the black hole itself
-                    ctx.fillStyle = '#000000';
-                    ctx.beginPath();
-                    ctx.arc(particle.x, particle.y, holeSize, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Draw bright text
-                    ctx.font = 'bold 24px Arial';
-                    ctx.fillStyle = '#ffffff';
-                    ctx.strokeStyle = '#000000';
-                    ctx.lineWidth = 3;
-                    ctx.textAlign = 'center';
-                    const label = particle.isEntrance ? 'ENTRANCE' : 'EXIT';
-                    ctx.strokeText(label, particle.x, particle.y - holeSize - 30);
-                    ctx.fillText(label, particle.x, particle.y - holeSize - 30);
                 } else if (particle.type === 'clusterExplosion') {
                     // Cluster bomb explosion particles
                     const currentSize = particle.size * alpha;
@@ -22746,7 +23259,7 @@
                             const segProgress = seg / segments;
                             const midX = hole.x + (endX - hole.x) * segProgress;
                             const midY = hole.y + (endY - hole.y) * segProgress;
-                            const jag = (Math.random() - 0.5) * 4; // Reduced jag
+                            const jag = (drawRand() - 0.5) * 4; // Reduced jag
                             ctx.lineTo(midX + jag, midY + jag);
                         }
                         ctx.stroke();
@@ -23037,11 +23550,17 @@
             }
 
             // Decay local screen shake and flash - faster decay
+            // v59.7: frameScale'd — decay was per-frame, so shakes died twice as fast on 120Hz
+            const shakeFS = game.frameScale || 1;
             if (game.shockScreenShake && game.shockScreenShake > 0) {
-                game.shockScreenShake = Math.max(0, game.shockScreenShake - 1.2);
+                game.shockScreenShake = Math.max(0, game.shockScreenShake - 1.2 * shakeFS);
             }
             if (game.shockFlash && game.shockFlash > 0) {
-                game.shockFlash = Math.max(0, game.shockFlash - 0.08);
+                game.shockFlash = Math.max(0, game.shockFlash - 0.08 * shakeFS);
+            }
+            // VISUAL #22 (v59.7): big-kill flash decays over ~4 frames
+            if (game.killFlash && game.killFlash > 0) {
+                game.killFlash = Math.max(0, game.killFlash - 0.035 * shakeFS);
             }
         }
 
@@ -23121,7 +23640,7 @@
 
                             // Subtle atmospheric swirls instead of harsh bands
                             for (let swirl = 0; swirl < 3; swirl++) {
-                                const swirlAngle = (swirl / 3) * Math.PI * 2 + Date.now() * 0.0001;
+                                const swirlAngle = (swirl / 3) * Math.PI * 2 + game.drawNow * 0.0001;
                                 const swirlX = planet.x + Math.cos(swirlAngle) * planet.size * 0.3;
                                 const swirlY = planet.y + Math.sin(swirlAngle) * planet.size * 0.3;
                                 const swirlSize = planet.size * 0.2;
@@ -23423,7 +23942,7 @@
                             }
 
                             // Subtle center energy
-                            const pulseFactor = Math.sin(Date.now() * 0.005) * 0.2 + 0.8;
+                            const pulseFactor = Math.sin(game.drawNow * 0.005) * 0.2 + 0.8;
                             const coreGradient = ctx.createRadialGradient(
                                 planet.x, planet.y, 0,
                                 planet.x, planet.y, planet.size * 0.24 * pulseFactor
@@ -23515,6 +24034,13 @@
             if (game.shockFlash && game.shockFlash > 0) {
                 ctx.save();
                 ctx.fillStyle = `rgba(200, 240, 255, ${game.shockFlash * 0.15})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+            // VISUAL #22 (v59.7): white flash pulse on big kills
+            if (VISUAL_CONFIG.bigKillFlash && game.killFlash && game.killFlash > 0) {
+                ctx.save();
+                ctx.fillStyle = `rgba(255, 255, 255, ${game.killFlash.toFixed(3)})`;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.restore();
             }
@@ -23878,7 +24404,7 @@
             game.asteroids = [];
             game.bossWarnings = [];
             game.bossCharges = [];
-            game.particles = [];
+            game.particles = []; game.delayedEffects = [];
             
             // Restore some player health
             game.player.health = Math.min(game.player.maxHealth, game.player.health + 50);
@@ -23925,7 +24451,7 @@
             game.trackingBullets = [];
             game.enemyBullets = [];
             game.asteroids = [];
-            game.particles = [];
+            game.particles = []; game.delayedEffects = [];
             game.blackHoles = [];
             game.powerups = [];
             game.lances = [];
@@ -23981,6 +24507,7 @@
             // Reset any screen effects
             game.shockScreenShake = 0;
             game.shockFlash = 0;
+            game.killFlash = 0;
             
             // Clear UI elements
             document.getElementById('bossHealth').style.display = 'none';
@@ -24020,7 +24547,7 @@
             game.enemies = [];
             game.enemyBullets = [];
             game.powerups = [];
-            game.particles = [];
+            game.particles = []; game.delayedEffects = [];
             game.lances = [];
             game.boss = null;
             game.trackingBullets = [];
@@ -24032,6 +24559,7 @@
             game.bossCharges = [];
             game.bossWarnings = [];
             game.scorePopups = [];
+            game.enemyMuzzleFlashes = [];
             game.score = 0;
             game.level = 1;
             game.levelProgress = 0;
@@ -24684,7 +25212,7 @@
                         game.enemyBullets = [];
                         game.asteroids = [];
                         game.powerups = [];
-                        game.particles = [];
+                        game.particles = []; game.delayedEffects = [];
                         game.shockwaves = [];
                         game.explosionFlashes = [];
                         game.blackHoles = [];
@@ -24973,7 +25501,6 @@
             game.enemies.forEach(e => {
                 if (e.lastShot) e.lastShot += pausedMs;
                 if (e.lastPatternChange) e.lastPatternChange += pausedMs;
-                if (e.lastSpawn) e.lastSpawn += pausedMs;
                 if (e.spawnTime) e.spawnTime += pausedMs;
                 if (e.vgPortalTimer) e.vgPortalTimer += pausedMs;
                 if (e.platformTimers) for (let pi = 0; pi < e.platformTimers.length; pi++) e.platformTimers[pi] += pausedMs;
@@ -24996,10 +25523,8 @@
                 // Machine rest period between patterns
                 if (b.nextAttackTime) b.nextAttackTime += pausedMs;
             }
-            // Void Generator portals + Gatekeeper void portals fire on wall-clock schedules
-            if (game.generatorPortals) game.generatorPortals.forEach(p => {
-                if (p.spawnTimer) p.spawnTimer += pausedMs;
-            });
+            // Gatekeeper void portals fire on wall-clock schedules
+            // (v59.7: generator portals moved to game-time spawnCooldown — no shift needed)
             if (game.voidPortals) game.voidPortals.forEach(p => {
                 if (p.nextFireTime) p.nextFireTime += pausedMs;
             });
@@ -25428,6 +25953,12 @@
                 const pausedMs = Date.now() - (game._pauseFreezeStart || Date.now());
                 if (pausedMs > 0) shiftWallClockTimers(pausedMs);
             }
+
+            // v59.7b: draw-side animation clock — holds its value while paused so
+            // every Date.now-driven canvas animation (auras, glows, boss pulses,
+            // swirls) freezes in place during P/ESC pause
+            if (!_pausedNow || !game.drawNow) game.drawNow = Date.now();
+            game._drawRandIdx = 0; // drawRand() counter — same sequence within a frozen frame
             
             // Force game to always run at unplugged (60fps) speed
             // When unplugged: 60fps = ~16.67ms per frame = frameScale 1.0
@@ -25470,8 +26001,9 @@
             }
             
             // Update frame-rate independent game time (v59.1) - use base frame scale for time progression
+            // v59.7b: frozen while paused so gameTime-driven draw animations stop too
             if (!game.gameTime) game.gameTime = 0;
-            game.gameTime += baseFrameScale * 16.67; // Simulate 60fps timing progression
+            if (!_pausedNow) game.gameTime += baseFrameScale * 16.67; // Simulate 60fps timing progression
             
             // Calculate dt for HUD (can use actual time)
             const dt = Math.min(1000 / 15, actualFrameTime);
@@ -29207,21 +29739,26 @@
             // Handle boss death pause
             if (game.bossDeathPause) {
                 const frameScale = game.frameScale || 1; // Frame rate independence
-                game.bossDeathTimer += frameScale;
-                
-                // Continue updating boss explosion and particles during pause
-                if (game.boss && game.boss.exploding) {
-                    updateBoss();
+                // v59.7b: P pause freezes the boss-death cinematic too
+                if (!game.pPaused) {
+                    game.bossDeathTimer += frameScale;
+
+                    // Continue updating boss explosion and particles during pause
+                    if (game.boss && game.boss.exploding) {
+                        updateBoss();
+                    }
+                    updateBulletEraseRings();
+                    updateDelayedEffects();
+                    updateEnemyMuzzleFlashes();
+                    updateParticles();
+                    updateDamageNumbers();
                 }
-                updateBulletEraseRings();
-                updateParticles();
-                updateDamageNumbers();
-                
+
                 // Clear canvas and draw everything with screen shake
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 
-                // Apply screen shake during boss death
-                const shakeIntensity = Math.max(0, 1 - (game.bossDeathTimer / game.bossDeathDuration));
+                // Apply screen shake during boss death (v59.7b: none while P-paused)
+                const shakeIntensity = game.pPaused ? 0 : Math.max(0, 1 - (game.bossDeathTimer / game.bossDeathDuration));
                 const shakeX = (Math.random() - 0.5) * 20 * shakeIntensity;
                 const shakeY = (Math.random() - 0.5) * 20 * shakeIntensity;
                 
@@ -29256,7 +29793,7 @@
                     game.enemies = [];
                     game.enemyBullets = [];
                     game.powerups = [];
-                    game.particles = [];
+                    game.particles = []; game.delayedEffects = [];
                 }
                 
                 requestAnimationFrame(gameLoop);
@@ -30522,8 +31059,14 @@
             // Update everything (skip during player explosion, boss explosion, or pause)
             if (!game.playerExploding && (!game.boss || !game.boss.exploding) && !game.paused && !game.pPaused) {
                 updatePlayer();
+                // VISUAL #19: watch enemyBullets grow to place muzzle flashes
+                let _mfPrev = game.enemyBullets.length;
                 updateEnemies();
+                recordEnemyMuzzleFlashes(_mfPrev);
+                updateEnemyBanking();
+                _mfPrev = game.enemyBullets.length;
                 updateBoss();
+                recordEnemyMuzzleFlashes(_mfPrev);
                 updateBullets();
                 updateAsteroids();
                 updateEnemyShrapnel();
@@ -30534,6 +31077,8 @@
                 updatePowerups();
                 updateShockwaves();
                 updateBulletEraseRings();
+                updateDelayedEffects();
+                updateEnemyMuzzleFlashes();
                 updateParticles();
                 updateDamageNumbers();
                 updateBlackHoles();
@@ -30616,7 +31161,7 @@
             
             // Draw everything
             // Apply small screen shake during shockwave
-            const doScreenShake = game.shockScreenShake && game.shockScreenShake > 0;
+            const doScreenShake = game.shockScreenShake && game.shockScreenShake > 0 && !_pausedNow; // v59.7b: no jitter while paused
             const sx = doScreenShake ? (Math.random() - 0.5) * game.shockScreenShake : 0;
             const sy = doScreenShake ? (Math.random() - 0.5) * game.shockScreenShake : 0;
 
@@ -30704,7 +31249,7 @@
                 }
                 const hpRatio = game.player.health / game.player.maxHealth;
                 const urgency = 1 - hpRatio / 0.3; // 0 at 30% health → 1 at 0%
-                const pulse = 0.75 + Math.sin(Date.now() * 0.004) * 0.25;
+                const pulse = 0.75 + Math.sin(game.drawNow * 0.004) * 0.25;
                 ctx.save();
                 ctx.globalAlpha = Math.min(0.15, (0.06 + urgency * 0.09) * pulse);
                 ctx.drawImage(game._vignetteSprite, 0, 0);
@@ -30726,7 +31271,7 @@
                     ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 6;
                     ctx.fillText('+' + sp.value, sp.x, sp.y - (1 - a) * 32);
                     ctx.restore();
-                    sp.timer -= game.frameScale || 1; // frame-rate independent fade
+                    if (!_pausedNow) sp.timer -= game.frameScale || 1; // frame-rate independent fade (v59.7b: frozen while paused)
                 });
             }
             
@@ -30737,7 +31282,7 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
                 // Animated border effect showing time distortion
-                const borderPulse = Math.sin(Date.now() * 0.003) * 0.5 + 0.5; // 0 to 1
+                const borderPulse = Math.sin(game.drawNow * 0.003) * 0.5 + 0.5; // 0 to 1
                 const borderAlpha = 0.3 + borderPulse * 0.2; // 0.3 to 0.5
                 ctx.strokeStyle = `rgba(150, 200, 255, ${borderAlpha})`;
                 ctx.lineWidth = 3;
@@ -30750,7 +31295,7 @@
                 
                 // Add corner time dilation indicators
                 const cornerSize = 20;
-                const cornerAlpha = 0.4 + Math.sin(Date.now() * 0.005) * 0.2;
+                const cornerAlpha = 0.4 + Math.sin(game.drawNow * 0.005) * 0.2;
                 ctx.fillStyle = `rgba(180, 220, 255, ${cornerAlpha})`;
                 // Top-left
                 ctx.fillRect(8, 8, cornerSize, 3);

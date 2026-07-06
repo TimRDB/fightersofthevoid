@@ -15,7 +15,10 @@
       "Bash(node analyze2.js)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "PowerShell($f = \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\\\\Fighters Of The Void v59.html\"; \\(Get-Content $f -TotalCount 25011 -Encoding UTF8\\)[25010])",
+      "Bash(node \"C:/Users/TIMDIX~1/AppData/Local/Temp/claude/c--Creative-The-Void-Series-Fighters-Of-The-Void/9b1670d9-3283-4e64-b457-919304301925/scratchpad/convert_settimeout.js\")",
+      "Bash(node \"C:/Users/TIMDIX~1/AppData/Local/Temp/claude/c--Creative-The-Void-Series-Fighters-Of-The-Void/9b1670d9-3283-4e64-b457-919304301925/scratchpad/syntax_check.js\")"
     ]
   }
 }
