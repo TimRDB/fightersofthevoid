@@ -167,7 +167,12 @@ const swell = (up, hold, down, total) => (t) => {
     return Math.max(0, 1 - (t - up - hold) / down);
 };
 
+// Regenerate a single sound without touching the rest (protects hand-kept
+// variants on disk):  ONLY_SFX=Player_Death node tools/generate_sfx.js
+const ONLY_SFX = process.env.ONLY_SFX;
+
 function writeWav(name, samples) {
+    if (ONLY_SFX && !name.startsWith(ONLY_SFX)) return;
     const n = samples.length;
     const data = Buffer.alloc(44 + n * 2);
     data.write('RIFF', 0); data.writeUInt32LE(36 + n * 2, 4); data.write('WAVE', 8);
@@ -399,6 +404,15 @@ writeWav('Explosion_Big_a', normalize(declick(explosion(1.3, 1.5, 4)), 0.88));
     mix(b, bandpass(whiteNoise(0.55, expDecay(0.2)), (t) => 1300 - t * 1700, 0.6), 0.3, 0.9);
     mix(b, tone(0.5, (t) => 420 - t * 640, expDecay(0.18)), 0.3, 0.5);
     writeWav('PureVoid_Death_a', normalize(declick(b), 0.8)); }
+{   // Player death: big blast + descending power-down whine (the ship's systems
+    // dying) + sputtering electrical tail. Matches the 3s shrapnel death animation.
+    const b = buf(2.2);
+    mix(b, explosion(1.5, 1.45, 4), 0, 1);                                   // main blast
+    mix(b, lowpass(brownNoise(0.5, expDecay(0.16)), 110), 0, 0.8);           // sub thump
+    for (let v = 0; v < 3; v++)                                              // power-down whine (detuned stack)
+        mix(b, tone(1.6, (t) => (520 - t * 290) * (1 + (v - 1) * 0.013), attackDecay(0.05, 0.55), 'saw'), 0.25, 0.2);
+    mix(b, ringmod(tone(1.2, (t) => 240 - t * 120, expDecay(0.4)), 33), 0.55, 0.3); // sputter tail
+    writeWav('Player_Death_a', normalize(declick(b), 0.9)); }
 
 // ════════════════════════ FLAME ════════════════════════
 {   const b = buf(0.32);

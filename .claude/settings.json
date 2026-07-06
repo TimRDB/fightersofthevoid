@@ -3,7 +3,17 @@
     "allow": [
       "Bash(git -C \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\" status)",
       "Bash(git -C \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\" diff --stat)",
-      "Bash(git -C \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\" log --oneline -5)"
+      "Bash(git -C \"c:\\\\Creative\\\\The Void Series\\\\Fighters Of The Void\" log --oneline -5)",
+      "Bash(awk 'NR<=18784 && /^\\\\s*function /{ln=NR; line=$0} END{}' script_0.js)",
+      "Bash(awk -F: '$1<=18708')",
+      "Bash(awk -F: '$1>=18600 && $1<=18800')",
+      "Bash(awk -F: '$1>=25188 && $1<=30432')",
+      "Bash(ONLY_SFX=Player_Death node tools/generate_sfx.js)",
+      "Bash(awk 'NR>=24083 && /^        function /{if \\(NR>24083\\) {print NR\": \"$0; exit}}' \"Fighters Of The Void v59.html\")",
+      "Bash(node -e ' *)",
+      "Bash(node analyze.js)",
+      "Bash(node analyze2.js)",
+      "Bash(git add *)"
     ]
   }
 }

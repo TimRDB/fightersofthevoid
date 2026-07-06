@@ -1163,15 +1163,6 @@
             }
         }
 
-        function ensureAudioContextRunning(ctx) {
-            if (!ctx) return false;
-            if (ctx.state === 'suspended') {
-                ctx.resume().catch((e) => console.warn('Could not resume audio context:', e));
-                return false;
-            }
-            return ctx.state === 'running';
-        }
-
         function getSfxOutputNode(ctx) {
             if (!ctx) return null;
             if (!game.sfxCompressor) {
@@ -1256,6 +1247,8 @@
                 Explosion_Big:          GEN + 'Explosion_Big_a.wav',
                 Void_Death:             GEN + 'Void_Death_a.wav',
                 PureVoid_Death:         GEN + 'PureVoid_Death_a.wav',
+                Player_Death:           GEN + 'Player_Death_a.wav', // blast + power-down whine
+
                 // Flame
                 Flame_Ignite:           GEN + 'Flame_Ignite_a.wav',
                 Flame_Burn:             GEN + 'Flame_Burn_a.wav',
@@ -1290,7 +1283,7 @@
             // Long/rare sounds don't need big reuse pools — saves Audio elements
             const LONG_SFX = new Set(['Boss_Explosion_Long', 'Gatekeeper_Death', 'Count_FinalCharge',
                 'Count_FinalRelease', 'Machine_BlackHole', 'SelfDestruct_Alarm', 'Mark2_Bomb_Deploy',
-                'Mark2_Bomb_Explode', 'Knight_Laser_Advanced']);
+                'Mark2_Bomb_Explode', 'Knight_Laser_Advanced', 'Player_Death']);
 
             // v59.6c: prioritized loading. Previously every sound spawned 7 Audio elements
             // simultaneously (~430 loads) the moment a difficulty was picked, so the first
@@ -4667,9 +4660,10 @@
                 player.lastCurvedShot = Date.now();
             }
             
-            // Update powerup timers
+            // Update powerup timers - frame rate independent (was a plain --, which cut
+            // the 4s duration to ~1.7s on 144Hz monitors)
             if (player.rapidFire > 0) {
-                player.rapidFire--;
+                player.rapidFire -= frameScale;
             }
             
             // Update hit animation timer - frame rate independent
@@ -5425,8 +5419,7 @@
                     else enemyType = 'void_sniper';
                 }
             } else if (game.level === 4) {
-                // Level 4 - 6 phases (no enemies spawning yet, to be built up phase by phase)
-                // TODO: Add enemies for each phase
+                // Level 4 - 6 phases
                 const phase4Progress = game.levelProgress / game.maxLevelProgress;
                 if (phase4Progress < 0.167) {
                     // Phase 1 (0-16.7%) - 100% asteroid layers
@@ -13574,14 +13567,9 @@
                     // Visual feedback for player hit
                     game.player.lastHit = Date.now();
 
-                    // Create damage number
-                    game.damageNumbers.push({
-                        x: game.player.x,
-                        y: game.player.y - 20,
-                        damage: laserDamage,
-                        life: 60,
-                        color: '#ff0000'
-                    });
+                    // Create damage number (raw push lacked text/speed/maxLife, so it
+                    // computed NaN positions and never rendered)
+                    addDamageNumber(game.player.x, game.player.y - 20, laserDamage, 'player');
 
                     if (game.player.health <= 0) {
                         game.player.health = 0;
@@ -18678,6 +18666,16 @@
                         continue;
                     }
                 }
+
+                // Update laser warning guidance lines (lifetime used to tick in
+                // drawEnemyBullets: frame-rate dependent and kept draining while paused)
+                if (bullet.isLaserWarning && bullet.life !== undefined) {
+                    bullet.life -= game.frameScale;
+                    if (bullet.life <= 0 || bullet.toRemove) {
+                        game.enemyBullets.splice(i, 1);
+                        continue;
+                    }
+                }
                 
                 // Update laser bullets (stationary)
                 if (bullet.isLaserBullet && bullet.life !== undefined) {
@@ -19399,14 +19397,8 @@
                         ctx.setLineDash([]); // Reset line dash
                         ctx.restore();
                     }
-                    
-                    // Update guidance life
-                    if (bullet.life !== undefined) {
-                        bullet.life--;
-                        if (bullet.life <= 0) {
-                            bullet.toRemove = true;
-                        }
-                    }
+                    // (guidance life now ticks in updateBullets — frame-rate independent,
+                    // frozen while paused)
                 } else if (bullet.isLaserBeam) {
                     // Moving laser beam that travels along guidance line - screen-spanning
                     const alpha = bullet.life ? (bullet.life / bullet.maxLife) : 0;
@@ -19457,13 +19449,8 @@
                         ctx.restore();
                     }
                     
-                    // Update laser beam life
-                    if (bullet.life !== undefined) {
-                        bullet.life--;
-                        if (bullet.life <= 0) {
-                            bullet.toRemove = true;
-                        }
-                    }
+                    // (beam life ticks in updateBullets only — the extra tick here made
+                    // beams expire twice as fast as designed and drain during pause)
                 } else if (bullet.isLaserBullet) {
                     // Laser beam bullets
                     const laserAlpha = bullet.life ? (bullet.life / 60) : 1;
@@ -19476,13 +19463,7 @@
                     ctx.fillRect(bullet.x - bullet.width / 3, bullet.y - bullet.height / 3, bullet.width / 1.5, bullet.height / 1.5);
                     
                     ctx.shadowBlur = 0;
-                    
-                    if (bullet.life) {
-                        bullet.life--;
-                        if (bullet.life <= 0) {
-                            bullet.toRemove = true;
-                        }
-                    }
+                    // (life ticks in updateBullets only — see isLaserBeam note above)
                 } else if (bullet.isSelfDestructBullet) {
                     // Self-destruct explosion bullets (v59.3: cached sprite)
                     const spr = _getBulletSprite('selfDestruct', bullet.width);
@@ -20841,26 +20822,6 @@
         }
         
         // Particle effects - balanced for performance and visual quality
-        function createExplosion(x, y) {
-            // Smart particle limiting - only limit if we have too many
-            if (game.particles.length > 300) return;
-            
-            for (let i = 0; i < 10; i++) {
-                const angle = (i / 10) * Math.PI * 2;
-                const speed = Math.random() * 2 + 1;
-                spawnParticle({
-                    x: x,
-                    y: y,
-                    speedX: Math.cos(angle) * speed,
-                    speedY: Math.sin(angle) * speed,
-                    life: 40,
-                    maxLife: 40,
-                    size: Math.random() * 3 + 2,
-                    color: Math.random() < 0.7 ? '#ff4400' : '#ff8800'
-                });
-            }
-        }
-        
         function createHitExplosion(x, y) {
             // Play metallic impact sound
             playBulletImpactSound();
@@ -21855,45 +21816,13 @@
                         }
                         
                         // Check for player death after taking damage
-                        if (game.player.health <= 0) {
-                            game.player.health = 0;
-                            // Start player explosion instead of immediate game over
-                            game.playerExploding = true;
-                            game.playerExplosionTimer = game.playerExplosionDuration;
-                            playGameOverSound();
-                            
-                            // Create shrapnel pieces flying off from player ship in waves
-                            game.playerShrapnel = [];
-                            
-                            // Wave 1: Fast, small pieces (immediate)
-                            const wave1Count = 8;
-                            for (let i = 0; i < wave1Count; i++) {
-                                const angle = (Math.PI * 2 * i) / wave1Count + (Math.random() - 0.5) * 0.3;
-                                const speed = 6 + Math.random() * 4; // Fast: 6-10
-                                const upwardArc = -3 - Math.random() * 2;
-                                game.playerShrapnel.push({
-                                    x: game.player.x,
-                                    y: game.player.y,
-                                    vx: Math.cos(angle) * speed,
-                                    vy: Math.sin(angle) * speed + upwardArc,
-                                    size: 2 + Math.random() * 2, // Small: 2-4
-                                    life: 60 + Math.random() * 30,
-                                    maxLife: 60 + Math.random() * 30,
-                                    color: '#ffffff',
-                                    rotation: Math.random() * Math.PI * 2,
-                                    rotationSpeed: (Math.random() - 0.5) * 0.3
-                                });
-                            }
+                        if (game.player.health <= 0 && !game.playerExploding) {
+                            triggerPlayerDeath(); // shared death sequence (proper shrapnel waves)
                         }
                         
-                        // Add damage number
-                        game.damageNumbers.push({
-                            x: game.player.x + (Math.random() - 0.5) * 40,
-                            y: game.player.y - 20,
-                            damage: asteroid.damage,
-                            life: 60,
-                            color: '#ff6666'
-                        });
+                        // Add damage number (raw push lacked text/speed/maxLife, so it
+                        // computed NaN positions and never rendered)
+                        addDamageNumber(game.player.x, game.player.y - 20, asteroid.damage, 'player');
                         
                         // Create asteroid collision particles
                         for (let p = 0; p < 8; p++) {
@@ -22154,33 +22083,11 @@
                                 game.player.health -= Math.floor(dmg * getDifficultyDamageMultiplier());
                                 updateHealthLevel();
                             }
-                            if (game.player.health <= 0) {
-                                game.player.health = 0;
-                                game.playerExploding = true;
-                                game.playerExplosionTimer = game.playerExplosionDuration;
-                                playGameOverSound();
-                                game.playerShrapnel = [];
-                                for (let si = 0; si < 8; si++) {
-                                    const ang = (Math.PI * 2 * si / 8) + (Math.random() - 0.5) * 0.3;
-                                    const sp = 6 + Math.random() * 4;
-                                    game.playerShrapnel.push({
-                                        x: game.player.x, y: game.player.y,
-                                        vx: Math.cos(ang) * sp,
-                                        vy: Math.sin(ang) * sp + (-3 - Math.random() * 2),
-                                        size: 2 + Math.random() * 2,
-                                        life: 60 + Math.random() * 30,
-                                        maxLife: 60 + Math.random() * 30,
-                                        color: '#ffffff',
-                                        rotation: Math.random() * Math.PI * 2,
-                                        rotationSpeed: (Math.random() - 0.5) * 0.3
-                                    });
-                                }
+                            if (game.player.health <= 0 && !game.playerExploding) {
+                                triggerPlayerDeath(); // shared death sequence (proper shrapnel waves)
                             }
-                            game.damageNumbers.push({
-                                x: game.player.x + (Math.random() - 0.5) * 40,
-                                y: game.player.y - 20,
-                                damage: dmg, life: 60, color: '#cc44ff'
-                            });
+                            // (raw push lacked text/speed/maxLife → never rendered)
+                            addDamageNumber(game.player.x, game.player.y - 20, dmg, 'player');
                         }
                     }
                 }
@@ -22598,15 +22505,16 @@
                 return;
             }
 
+            const _dnScale = game.frameScale || 1; // frame-rate independent float/fade
             for (let i = game.damageNumbers.length - 1; i >= 0; i--) {
                 const damage = game.damageNumbers[i];
-                
+
                 // Update position - float upward and slightly sideways
-                damage.y -= damage.speed;
-                damage.x += damage.drift;
-                
+                damage.y -= damage.speed * _dnScale;
+                damage.x += damage.drift * _dnScale;
+
                 // Update alpha - fade out over time
-                damage.life--;
+                damage.life -= _dnScale;
                 damage.alpha = damage.life / damage.maxLife;
                 
                 // Update scale - grow slightly then shrink
@@ -23038,8 +22946,8 @@
         function updateShockwaves() {
             for (let i = game.shockwaves.length - 1; i >= 0; i--) {
                 const s = game.shockwaves[i];
-                s.radius += s.speed;
-                s.life--;
+                s.radius += s.speed * (game.frameScale || 1); // frame-rate independent expansion
+                s.life -= game.frameScale || 1;
 
                 // Optimized enemy damage - only check enemies within reasonable distance
                 const checkRadius = s.radius + 50; // Only check enemies near the shockwave
@@ -23692,87 +23600,6 @@
             }
         }
         
-        // Enemy explosion sound function
-        function playEnemyExplosionSound() {
-            if (game.muted) return; // Don't play if muted
-            if (playSfxVariant('explode', 0.5, 0.16, 0.11)) return; // use Bfxr file if loaded
-            
-            try {
-                const audioContext = getAudioContext();
-                if (!audioContext) return;
-                if (audioContext.state !== 'running') audioContext.resume().catch(() => {});
-                const intensity = randomRange(0.68, 1.22);
-                const pitchShift = randomRange(0.82, 1.18);
-                
-                // Create multiple metallic explosion components
-                const components = [];
-                
-                for (let i = 0; i < 4; i++) {
-                    const osc = audioContext.createOscillator();
-                    const gain = audioContext.createGain();
-                    const filter = audioContext.createBiquadFilter();
-                    
-                    osc.connect(filter);
-                    filter.connect(gain);
-                    gain.connect(getSfxOutputNode(audioContext) || audioContext.destination);
-                    
-                    // Metallic frequencies - now includes some lower range
-                    const baseFreq = (300 + (i * 125) + (Math.random() * 130)) * pitchShift;
-                    osc.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, audioContext.currentTime + 0.12);
-                    
-                    // Smoother wave types to reduce scratchiness
-                    osc.type = i % 3 === 0 ? 'triangle' : i % 3 === 1 ? 'sine' : 'sawtooth';
-                    
-                    // High-pass filter with lower Q for less scratchiness
-                    filter.type = 'bandpass';
-                    filter.frequency.setValueAtTime((720 + (i * 180)) * pitchShift, audioContext.currentTime);
-                    filter.Q.setValueAtTime(0.65 + Math.random() * 0.45, audioContext.currentTime);
-                    
-                    // Explosive envelope - quick attack, fast decay, more low sound
-                    const startTime = audioContext.currentTime + (i * 0.01);
-                    gain.gain.setValueAtTime(0, startTime);
-                    gain.gain.linearRampToValueAtTime((0.075 - (i * 0.009) + (i === 0 ? 0.018 : 0)) * intensity, startTime + 0.02);
-                    gain.gain.exponentialRampToValueAtTime(0.003, startTime + 0.12);
-                    
-                    osc.start(startTime);
-                    osc.stop(startTime + 0.12);
-                    
-                    components.push({osc, gain});
-                }
-                
-                // Add high-frequency spark component with less scratchiness
-                const sparkOsc = audioContext.createOscillator();
-                const sparkGain = audioContext.createGain();
-                const sparkFilter = audioContext.createBiquadFilter();
-                
-                sparkOsc.connect(sparkFilter);
-                sparkFilter.connect(sparkGain);
-                sparkGain.connect(getSfxOutputNode(audioContext) || audioContext.destination);
-                
-                // High frequency spark with some body
-                sparkOsc.frequency.setValueAtTime((1200 + Math.random() * 650) * pitchShift, audioContext.currentTime);
-                sparkOsc.frequency.exponentialRampToValueAtTime(760 * pitchShift, audioContext.currentTime + 0.08);
-                sparkOsc.type = 'triangle'; // Smoother than square
-                
-                // High-pass filter with lower Q for less scratchiness
-                sparkFilter.type = 'lowpass';
-                sparkFilter.frequency.setValueAtTime(4200, audioContext.currentTime);
-                sparkFilter.Q.setValueAtTime(0.7 + Math.random() * 0.4, audioContext.currentTime);
-                
-                // Quick spark envelope - less high sound
-                sparkGain.gain.setValueAtTime(0, audioContext.currentTime);
-                sparkGain.gain.linearRampToValueAtTime(0.008 * intensity, audioContext.currentTime + 0.01);
-                sparkGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.08);
-                
-                sparkOsc.start(audioContext.currentTime);
-                sparkOsc.stop(audioContext.currentTime + 0.08);
-                
-            } catch (e) {
-                // Silently fail if audio context issues
-            }
-        }
-        
         // Player shooting sound.
         // Primary path: WebAudio AudioBufferSource — true polyphony, each shot plays
         // independently to completion with no interruption from any other sound or control.
@@ -23809,35 +23636,11 @@
             }
         }
         
-        // Game over sound function
+        // Game over sound — called from triggerPlayerDeath(). Big blast + power-down
+        // whine generated by tools/generate_sfx.js; mute is handled by the play path.
         function playGameOverSound() {
-            if (game.muted) return; // Don't play if muted
-            return; // placeholder — link a file when ready
             stopMusic();
-            playSound('player_death');
-
-            const audioContext = getAudioContext();
-            
-            // Create a sad descending melody
-            const notes = [523.25, 493.88, 440.00, 392.00, 349.23]; // C5, B4, A4, G4, F4
-            const duration = 0.4;
-            
-            notes.forEach((frequency, index) => {
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime + index * duration);
-                oscillator.type = 'sawtooth'; // Sadder sound
-                
-                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime + index * duration);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + (index + 1) * duration);
-                
-                oscillator.start(audioContext.currentTime + index * duration);
-                oscillator.stop(audioContext.currentTime + (index + 1) * duration);
-            });
+            playSfxVariant('Player_Death', 0.9, 0.04, 0.03);
         }
         
         // UI updates
@@ -24275,290 +24078,6 @@
             playMusic('menu');
         }
 
-        // ─── SANDBOX PANEL ────────────────────────────────────────────────────────
-        function drawSandboxPanel() {
-            const px = canvas.width - 192;
-            const py = 50;
-            const pw = 188;
-            const btnH = 22;
-            const bw1 = 83;  // button width for 2-col layout
-            const colGap = 6;
-            const gap = 4;
-
-            // Reset hit regions each frame (populated below, read by click handler)
-            game._sandboxHitRegions = [];
-
-            const spawnRows = [
-                ['basic', 'fast'],
-                ['heavy', 'zigzag'],
-                ['sniper', 'elite'],
-                ['drone', 'void_soldier'],
-                ['void_normal', 'void_drone'],
-                ['void_sniper', 'void_warrior'],
-                ['void_master', 'asteroid_layer'],
-                ['dreadnought', 'asteroid'], ['void_dreadnought'],
-                ['mini_asteroid_layer'],
-                ['void_asteroid_layer'],
-                ['warship', 'fighter_jet']
-            ];
-
-            // Calculate total panel height
-            const ph = 10 + 28 + 28 + 22 + spawnRows.length * (btnH + gap) + 6 + (btnH + gap) + 8 + 22 + 3 * (btnH + gap) + 10;
-
-            ctx.save();
-
-            // Panel background
-            ctx.fillStyle = 'rgba(8, 3, 22, 0.93)';
-            ctx.strokeStyle = '#7722cc';
-            ctx.lineWidth = 2;
-            if (ctx.roundRect) {
-                ctx.beginPath();
-                ctx.roundRect(px, py, pw, ph, 6);
-                ctx.fill();
-                ctx.stroke();
-            } else {
-                ctx.fillRect(px, py, pw, ph);
-                ctx.strokeRect(px, py, pw, ph);
-            }
-
-            let cy = py + 10;
-
-            // Header
-            ctx.shadowColor = '#9933ff';
-            ctx.shadowBlur = 6;
-            ctx.fillStyle = '#cc66ff';
-            ctx.font = 'bold 13px Arial';
-            ctx.textAlign = 'left';
-            ctx.fillText('\u2699 SANDBOX', px + 8, cy + 14);
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#777';
-            ctx.font = '10px Arial';
-            ctx.fillText('[`] to close', px + 82, cy + 14);
-
-            // Close (X) button
-            const closeX = px + pw - 26;
-            ctx.fillStyle = '#440022';
-            ctx.fillRect(closeX, cy, 20, 20);
-            ctx.strokeStyle = '#ff2266';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(closeX, cy, 20, 20);
-            ctx.fillStyle = '#ff4488';
-            ctx.font = 'bold 13px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('\u2715', closeX + 10, cy + 14);
-            game._sandboxHitRegions.push({ x: closeX, y: cy, w: 20, h: 20, action: 'close' });
-            cy += 28;
-
-            // Instructions toggle button
-            ctx.fillStyle = game.sandboxShowInstructions ? '#3a1070' : '#1a0840';
-            ctx.fillRect(px + 6, cy, pw - 12, btnH);
-            ctx.strokeStyle = game.sandboxShowInstructions ? '#cc66ff' : '#5522aa';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(px + 6, cy, pw - 12, btnH);
-            ctx.fillStyle = '#ddaaff';
-            ctx.font = '11px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(game.sandboxShowInstructions ? '\u25b2 HIDE INSTRUCTIONS' : '\u25bc HOW TO USE', px + pw / 2, cy + 15);
-            game._sandboxHitRegions.push({ x: px + 6, y: cy, w: pw - 12, h: btnH, action: 'toggleInstructions' });
-            cy += 28;
-
-            // Spawn section header
-            ctx.fillStyle = '#6633aa';
-            ctx.font = 'bold 10px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('\u2015\u2015 SPAWN ENEMY \u2015\u2015', px + pw / 2, cy + 12);
-            cy += 22;
-
-            const nameMap = {
-                basic: 'Basic', fast: 'Fast', heavy: 'Heavy', zigzag: 'Zigzag',
-                sniper: 'Sniper', elite: 'Elite', drone: 'Drone',
-                void_normal: 'Void Normal', void_drone: 'Void Drone',
-                void_soldier: 'Void Soldier', void_sniper: 'Void Sniper',
-                void_warrior: 'Void Warrior', void_master: 'Void Master',
-                asteroid_layer: 'Asteroid Layer', mini_asteroid_layer: 'Mini Asteroid Layer', void_asteroid_layer: 'Void Asteroid Layer', void_turret: 'Void Turret', dreadnought: 'Dreadnought', void_dreadnought: 'Void Dreadnought', warship: 'Warship', asteroid: 'Asteroid',
-                fighter_jet: 'Fighter Jet',
-                defender_stealth_fighter: 'Stealth Fighter'
-            };
-            const colMap = {
-                basic: '#ff5555', fast: '#55ff55', heavy: '#5577ff', zigzag: '#ff55ff',
-                sniper: '#ffff55', elite: '#ff8822', drone: '#aaaaaa',
-                void_normal: '#9966cc', void_drone: '#aa66ff',
-                void_soldier: '#9966cc', void_sniper: '#cc44dd', void_warrior: '#7744aa',
-                void_master: '#bb44ff', asteroid_layer: '#7a9a33', mini_asteroid_layer: '#66753a', void_asteroid_layer: '#9933cc', dreadnought: '#888899', void_dreadnought: '#663388', asteroid: '#88aa88',
-                warship: '#4455aa', fighter_jet: '#dd3322',
-                defender_stealth_fighter: '#cc6622'
-            };
-
-            spawnRows.forEach(row => {
-                row.forEach((type, col) => {
-                    if (!type) return;
-                    const bx = px + 8 + col * (bw1 + colGap);
-                    const by = cy;
-                    ctx.fillStyle = '#180830';
-                    ctx.fillRect(bx, by, bw1, btnH);
-                    ctx.strokeStyle = colMap[type] || '#5544aa';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(bx, by, bw1, btnH);
-                    ctx.fillStyle = colMap[type] || '#ccaaff';
-                    ctx.font = '10px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(nameMap[type] || type, bx + bw1 / 2, by + 15);
-                    game._sandboxHitRegions.push({ x: bx, y: by, w: bw1, h: btnH, action: 'spawn', enemyType: type });
-                });
-                cy += btnH + gap;
-            });
-
-            // Clear enemies button
-            cy += 6;
-            ctx.fillStyle = '#2a0010';
-            ctx.fillRect(px + 6, cy, pw - 12, btnH);
-            ctx.strokeStyle = '#ff2244';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(px + 6, cy, pw - 12, btnH);
-            ctx.fillStyle = '#ff6688';
-            ctx.font = 'bold 10px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('CLEAR ALL ENEMIES', px + pw / 2, cy + 15);
-            game._sandboxHitRegions.push({ x: px + 6, y: cy, w: pw - 12, h: btnH, action: 'clearEnemies' });
-            cy += btnH + 8;
-
-            // Player power controls
-            ctx.fillStyle = '#6633aa';
-            ctx.font = 'bold 10px Arial';
-            ctx.fillText('–– PLAYER POWER ––', px + pw / 2, cy + 12);
-            cy += 22;
-
-            const playerPowerButtons = [
-                { label: 'PLAYER DEPOWERED', action: 'playerDepowered', color: '#66ccff' },
-                { label: 'PLAYER FULL POWERED', action: 'playerFullPowered', color: '#ffff66' },
-                { label: 'REMOVE SHIELD', action: 'removeShield', color: '#ff4444' },
-                { label: 'FULL SHIELD', action: 'fullShield', color: '#66ff66' }
-            ];
-
-            playerPowerButtons.forEach(btnCfg => {
-                ctx.fillStyle = '#180830';
-                ctx.fillRect(px + 6, cy, pw - 12, btnH);
-                ctx.strokeStyle = btnCfg.color;
-                ctx.lineWidth = 1;
-                ctx.strokeRect(px + 6, cy, pw - 12, btnH);
-                ctx.fillStyle = btnCfg.color;
-                ctx.font = 'bold 10px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(btnCfg.label, px + pw / 2, cy + 15);
-                game._sandboxHitRegions.push({ x: px + 6, y: cy, w: pw - 12, h: btnH, action: btnCfg.action });
-                cy += btnH + gap;
-            });
-
-            // Toggles section header
-            ctx.fillStyle = '#6633aa';
-            ctx.font = 'bold 10px Arial';
-            ctx.fillText('\u2015\u2015 TOGGLES \u2015\u2015', px + pw / 2, cy + 12);
-            cy += 22;
-
-            const toggles = [
-                { label: 'ENEMY INVINCIBLE', flag: 'sandboxInvincibleEnemies', onBg: '#004422', onText: '#00ff66', offText: '#446644' },
-                { label: 'PLAYER INVINCIBLE', flag: 'invincible',               onBg: '#001b44', onText: '#44aaff', offText: '#334455' },
-                { label: 'SLOW-MO (40%)',      flag: 'sandboxSlowMo',            onBg: '#442200', onText: '#ffaa22', offText: '#554422' }
-            ];
-            toggles.forEach(t => {
-                const active = !!game[t.flag];
-                ctx.fillStyle = active ? t.onBg : '#120828';
-                ctx.fillRect(px + 6, cy, pw - 12, btnH);
-                ctx.strokeStyle = active ? t.onText : '#442266';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(px + 6, cy, pw - 12, btnH);
-                ctx.fillStyle = active ? t.onText : t.offText;
-                ctx.font = 'bold 10px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText((active ? '\u25cf ' : '\u25cb ') + t.label, px + pw / 2, cy + 15);
-                game._sandboxHitRegions.push({ x: px + 6, y: cy, w: pw - 12, h: btnH, action: 'toggle', flag: t.flag });
-                cy += btnH + gap;
-            });
-
-            ctx.restore();
-
-            // Instructions overlay (drawn on top of everything)
-            if (game.sandboxShowInstructions) {
-                const ox = 30, oy = 30;
-                const ow = canvas.width - 60, oh = canvas.height - 60;
-                ctx.save();
-                ctx.fillStyle = 'rgba(6, 2, 18, 0.97)';
-                ctx.strokeStyle = '#8833cc';
-                ctx.lineWidth = 2;
-                if (ctx.roundRect) {
-                    ctx.beginPath();
-                    ctx.roundRect(ox, oy, ow, oh, 8);
-                    ctx.fill();
-                    ctx.stroke();
-                } else {
-                    ctx.fillRect(ox, oy, ow, oh);
-                    ctx.strokeRect(ox, oy, ow, oh);
-                }
-
-                ctx.shadowColor = '#9933ff';
-                ctx.shadowBlur = 8;
-                ctx.fillStyle = '#cc66ff';
-                ctx.font = 'bold 16px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('SANDBOX \u2014 HOW TO USE', canvas.width / 2, oy + 30);
-                ctx.shadowBlur = 0;
-
-                // Close button for instructions overlay
-                const ihX = ox + ow - 34, ihY = oy + 10;
-                ctx.fillStyle = '#440022';
-                ctx.fillRect(ihX, ihY, 24, 24);
-                ctx.strokeStyle = '#ff2266';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(ihX, ihY, 24, 24);
-                ctx.fillStyle = '#ff4488';
-                ctx.font = 'bold 13px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('\u2715', ihX + 12, ihY + 17);
-                game._sandboxHitRegions.push({ x: ihX, y: ihY, w: 24, h: 24, action: 'closeInstructions' });
-
-                const linesData = [
-                    ['OPENING & CLOSING', true],
-                    ['Press  `  (backtick \u2014 top-left key, left of 1) at any time during a level to show/hide the panel.', false],
-                    ['', false],
-                    ['SPAWNING ENEMIES', true],
-                    ['Click any enemy button to spawn that type at a random position near the top of the screen.', false],
-                    ['You can spawn multiples of any type. Great for testing group behaviour or observing AI.', false],
-                    ['Spawning is disabled outside of an active level.', false],
-                    ['', false],
-                    ['CLEAR ALL ENEMIES', true],
-                    ['Removes every enemy currently on screen. Bullets already in flight are not removed.', false],
-                    ['', false],
-                    ['ENEMY INVINCIBLE', true],
-                    ['Enemies take hits and flash but health is clamped to 1 \u2014 they can never die.', false],
-                    ['Use this to observe Void Master beams, shields, attack pattern cycling, Void Soldier teleports, etc.', false],
-                    ['', false],
-                    ['PLAYER INVINCIBLE', true],
-                    ['You cannot take damage. Same effect as pressing  I  during gameplay.', false],
-                    ['', false],
-                    ['SLOW-MO (40%)', true],
-                    ['Slows all movement to 40% speed. Good for watching teleport beams, portal effects, and bullet spread.', false],
-                    ['', false],
-                    ['OTHER HOTKEYS', true],
-                    ['  F  \u2014 Toggle position/hitbox debug overlay (labels on all objects)', false],
-                    ['  I  \u2014 Toggle player invincibility  (same as the panel toggle)', false],
-                    ['  M  \u2014 Toggle mute        P  \u2014 Silent pause        ESC  \u2014 Pause menu', false],
-                ];
-
-                let ly = oy + 52;
-                const lx = ox + 24;
-                linesData.forEach(([text, isHeader]) => {
-                    if (!text) { ly += 8; return; }
-                    ctx.font = isHeader ? 'bold 12px Arial' : '11px Arial';
-                    ctx.fillStyle = isHeader ? '#ffcc44' : '#ccaaee';
-                    ctx.textAlign = 'left';
-                    ctx.fillText(text, lx, ly);
-                    ly += isHeader ? 19 : 16;
-                });
-
-                ctx.restore();
-            }
-        }
-        // ──────────────────────────────────────────────────────────────────────────
 
         // ─── SANDBOX PANEL (DOM) ─────────────────────────────────────────────────
 
@@ -29550,17 +29069,18 @@
                 }
                 
                 // Continue updating and drawing shrapnel during game over
+                const _goShrapScale = game.frameScale || 1; // frame-rate independent
                 game.playerShrapnel.forEach(shrapnel => {
                     // Handle delay before piece becomes active
                     if (shrapnel.delay > 0) {
-                        shrapnel.delay--;
+                        shrapnel.delay -= _goShrapScale;
                         return; // Don't update position or life until delay is over
                     }
-                    
-                    shrapnel.x += shrapnel.vx;
-                    shrapnel.y += shrapnel.vy;
-                    shrapnel.vy += 0.02; // Very light gravity for subtle arc
-                    shrapnel.life--;
+
+                    shrapnel.x += shrapnel.vx * _goShrapScale;
+                    shrapnel.y += shrapnel.vy * _goShrapScale;
+                    shrapnel.vy += 0.02 * _goShrapScale; // Very light gravity for subtle arc
+                    shrapnel.life -= _goShrapScale;
                 });
                 
                 // Remove dead shrapnel
@@ -31076,17 +30596,18 @@
                 }
                 
                 // Continue updating shrapnel even after explosion finishes
+                const _pxShrapScale = game.frameScale || 1; // frame-rate independent
                 game.playerShrapnel.forEach(shrapnel => {
                     // Handle delay before piece becomes active
                     if (shrapnel.delay > 0) {
-                        shrapnel.delay--;
+                        shrapnel.delay -= _pxShrapScale;
                         return; // Don't update position or life until delay is over
                     }
-                    
-                    shrapnel.x += shrapnel.vx;
-                    shrapnel.y += shrapnel.vy;
-                    shrapnel.vy += 0.02; // Very light gravity for subtle arc (reduced from 0.1)
-                    shrapnel.life--;
+
+                    shrapnel.x += shrapnel.vx * _pxShrapScale;
+                    shrapnel.y += shrapnel.vy * _pxShrapScale;
+                    shrapnel.vy += 0.02 * _pxShrapScale; // Very light gravity for subtle arc (reduced from 0.1)
+                    shrapnel.life -= _pxShrapScale;
                 });
                 
                 // Remove dead shrapnel
@@ -31205,7 +30726,7 @@
                     ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 6;
                     ctx.fillText('+' + sp.value, sp.x, sp.y - (1 - a) * 32);
                     ctx.restore();
-                    sp.timer--;
+                    sp.timer -= game.frameScale || 1; // frame-rate independent fade
                 });
             }
             
@@ -31265,7 +30786,7 @@
             
             // Display checkpoint message
             if (game.checkpointMessageTimer > 0) {
-                game.checkpointMessageTimer--;
+                game.checkpointMessageTimer -= game.frameScale || 1; // frame-rate independent
                 
                 const messageAlpha = game.checkpointMessageTimer < 60 ? 
                     game.checkpointMessageTimer / 60 : 1; // Fade out in last second
