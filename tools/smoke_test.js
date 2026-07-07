@@ -81,6 +81,29 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         await page.evaluate(() => { game.boss = null; game.enemyBullets.length = 0; game.bossDeathPause = false; });
         await sleep(200);
     }
+    // Perf probe: sustained boss hit flash vs no flash
+    await page.evaluate(() => { game.enemies.length = 0; game.boss = null; game.level = 2; spawnBoss(); });
+    await sleep(1500);
+    const measure = flashing => page.evaluate(async (flashing) => {
+        const deltas = [];
+        let flasher = null;
+        if (flashing) flasher = setInterval(() => { if (game.boss) game.boss.hitFlashTimer = 4; }, 40);
+        await new Promise(res => {
+            let last = performance.now(), n = 0;
+            const tick = t => { deltas.push(t - last); last = t; if (++n < 70) requestAnimationFrame(tick); else res(); };
+            requestAnimationFrame(tick);
+        });
+        if (flasher) clearInterval(flasher);
+        deltas.sort((a, b) => a - b);
+        return {
+            median: +deltas[Math.floor(deltas.length / 2)].toFixed(2),
+            p90: +deltas[Math.floor(deltas.length * 0.9)].toFixed(2)
+        };
+    }, flashing);
+    console.log('knight frame ms without flash: ' + JSON.stringify(await measure(false)));
+    console.log('knight frame ms with sustained flash: ' + JSON.stringify(await measure(true)));
+    await page.evaluate(() => { game.boss = null; game.enemyBullets.length = 0; });
+
     // Gatekeeper
     await page.evaluate(() => { game.boss = null; spawnGatekeeper(); });
     await sleep(2200);
