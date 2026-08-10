@@ -357,6 +357,17 @@
                 font-size: 11px;
                 font-weight: bold;
             ">📦 Unassigned</button>
+            <button id="demosTab" style="
+                flex: 1;
+                padding: 6px 10px;
+                background: rgba(74, 144, 226, 0.2);
+                border: 1px solid #4a90e2;
+                color: #fff;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 11px;
+                font-weight: bold;
+            ">🧪 Demos</button>
         </div>
 
         <!-- Content Container -->
@@ -426,6 +437,10 @@
             <div id="unassignedContent" style="display: none; flex-direction: column; height: 100%; flex: 1; overflow-y: auto;">
             </div>
 
+            <!-- Toolkit Demos Tab -->
+            <div id="demosContent" style="display: none; flex-direction: column; height: 100%; flex: 1; overflow-y: auto;">
+            </div>
+
         </div>
 
         <style>
@@ -449,7 +464,9 @@
         top: 100px;
         left: 500px;
         width: 900px;
-        height: 500px;
+        height: 640px;
+        min-width: 480px;
+        min-height: 320px;
         background: rgba(0, 20, 40, 0.95);
         border: 2px solid #2a90e2;
         border-radius: 8px;
@@ -462,7 +479,6 @@
         box-shadow: 0 0 30px rgba(42, 144, 226, 0.4);
         display: none;
         flex-direction: column;
-        cursor: move;
         resize: both;
     ">
         <!-- Header -->
@@ -590,13 +606,13 @@
             .mixer-strip {
                 display: flex;
                 flex-direction: column;
-                padding: 8px;
+                padding: 10px;
                 background: rgba(0, 30, 60, 0.6);
                 border: 1px solid #2a90e2;
                 border-radius: 4px;
-                min-width: 160px;
-                max-width: 160px;
-                gap: 8px;
+                min-width: 176px;
+                max-width: 176px;
+                gap: 10px;
                 flex-shrink: 0;
             }
             .mixer-strip-name {
@@ -604,10 +620,11 @@
                 font-weight: bold;
                 color: #2af;
                 text-align: center;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                max-height: 30px;
+                white-space: normal;
+                word-break: break-word;
+                line-height: 1.35;
+                min-height: 27px;
+                max-height: 54px;
                 overflow-y: auto;
             }
             .mixer-strip-slider-container {
@@ -1004,7 +1021,35 @@
             }
             // Allow more particles for bigger impact effect
             if (game.particles.length > 300) return; // Slightly higher limit
-            
+
+            // v59.9: a dense bullet volley can land several simultaneous hits in a
+            // single frame — each one used to spawn this function's full ~48-particle
+            // burst uncapped, so a shield eating 6-8 bullets at once could dump
+            // 300+ particles into one frame. That's exactly when the game bogged
+            // down, since it's also the busiest moment on screen otherwise. Give the
+            // first hit in a short window the full burst; collapse any more within
+            // it to a token sparkle — still one flash/shake/damage-tick per bullet,
+            // just without re-paying the full particle cost for each.
+            const _now2 = Date.now();
+            const isFullBurst = !game._phBurstTime || (_now2 - game._phBurstTime) >= 90;
+            if (isFullBurst) game._phBurstTime = _now2;
+
+            if (!isFullBurst) {
+                for (let i = 0; i < 4; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 1.5 + Math.random() * 3;
+                    spawnParticle({
+                        x: x + (Math.random() - 0.5) * 16,
+                        y: y + (Math.random() - 0.5) * 16,
+                        speedX: Math.cos(angle) * speed,
+                        speedY: Math.sin(angle) * speed - (shieldHit ? 0.2 : 0.6),
+                        life: 10 + Math.random() * 10,
+                        maxLife: 20,
+                        size: 1.5 + Math.random() * 2,
+                        color: shieldHit ? '#70bfff' : '#ff6644'
+                    });
+                }
+            } else {
             const baseCount = shieldHit ? 12 : 8; // More particles for shield dissipation
             const count = Math.min(22, baseCount + Math.floor(damage / 2)); // More particles, lower damage threshold
             for (let i = 0; i < count; i++) {
@@ -1017,7 +1062,7 @@
                 const color = shieldHit
                     ? Math.random() < 0.35 ? '#c8f0ff' : Math.random() < 0.7 ? '#70bfff' : '#2a9aff'
                     : Math.random() < 0.5 ? '#ff4444' : Math.random() < 0.75 ? '#ff8844' : '#ffff88';
-                
+
                 spawnParticle({
                     x: x + (Math.random() - 0.5) * (shieldHit ? 24 : 20),
                     y: y + (Math.random() - 0.5) * (shieldHit ? 24 : 20),
@@ -1029,14 +1074,14 @@
                     color: color
                 });
             }
-            
+
             // Enhanced burst of spark particles for better visibility
             for (let i = 0; i < (shieldHit ? 12 : 10); i++) {
                 const angle = Math.random() * Math.PI * 2;
                 const speed = 2.0 + Math.random() * 5.0;
                 const sx = Math.cos(angle) * speed;
                 const sy = Math.sin(angle) * speed - (shieldHit ? 0.5 : 1.0);
-                
+
                 spawnParticle({
                     x: x + (Math.random() - 0.5) * 16,
                     y: y + (Math.random() - 0.5) * 16,
@@ -1048,7 +1093,7 @@
                     color: shieldHit ? '#e8f7ff' : '#ffffff'
                 });
             }
-            
+
             if (shieldHit) {
                 // Add a quick shield ripple of cold particles
                 for (let i = 0; i < 8; i++) {
@@ -1066,7 +1111,7 @@
                     });
                 }
             }
-            
+
             // Add distinctive bright flash sparks around the ship perimeter
             for (let i = 0; i < 8; i++) {
                 const angle = (i / 8) * Math.PI * 2; // Evenly distributed around ship
@@ -1074,7 +1119,7 @@
                 const sparkX = x + Math.cos(angle) * distance;
                 const sparkY = y + Math.sin(angle) * distance;
                 const speed = 1.5 + Math.random() * 2;
-                
+
                 spawnParticle({
                     x: sparkX,
                     y: sparkY,
@@ -1086,7 +1131,8 @@
                     color: shieldHit ? '#a8deff' : (Math.random() < 0.7 ? '#ffffff' : '#ffff00')
                 });
             }
-            
+            } // end isFullBurst
+
             game.player.hitTimer = shieldHit ? 18 : 24; // Slightly faster for shield impacts
             
             if (shieldHit) {
@@ -1282,17 +1328,23 @@
 
         function getSfxOutputNode(ctx) {
             if (!ctx) return null;
-            if (!game.sfxCompressor) {
-                const compressor = ctx.createDynamicsCompressor();
+            // Keyed by ctx (WeakMap) rather than a single global node: the sound
+            // tester renders variations through an OfflineAudioContext to bake them
+            // into real gameplay buffers, and an AudioNode can only ever connect to
+            // nodes from the context that created it.
+            if (!game.sfxCompressors) game.sfxCompressors = new WeakMap();
+            let compressor = game.sfxCompressors.get(ctx);
+            if (!compressor) {
+                compressor = ctx.createDynamicsCompressor();
                 compressor.threshold.setValueAtTime(-14, ctx.currentTime);
                 compressor.knee.setValueAtTime(18, ctx.currentTime);
                 compressor.ratio.setValueAtTime(3, ctx.currentTime);
                 compressor.attack.setValueAtTime(0.004, ctx.currentTime);
                 compressor.release.setValueAtTime(0.18, ctx.currentTime);
                 compressor.connect(ctx.destination);
-                game.sfxCompressor = compressor;
+                game.sfxCompressors.set(ctx, compressor);
             }
-            return game.sfxCompressor;
+            return compressor;
         }
 
         // ─── File-Based Audio System (Bfxr SFX + composed soundtrack) ─────────────
@@ -1432,13 +1484,22 @@
 
             game.sfxPools = {};
             game.sfxPoolSizes = {};
+            // Pristine copies kept aside from game.sfxElements/sfxBuffers so the Sound
+            // Tester's "Undo"/revert can get back to the original factory sound after
+            // a live override has replaced the gameplay entry for that name.
+            if (!game.sfxFactoryElements) game.sfxFactoryElements = {};
+            if (!game.sfxFactoryBuffers) game.sfxFactoryBuffers = {};
             const makeEl = (name, path) => {
-                if (game.sfxElements[name]) return;
-                const el = new Audio(path);
-                el.preload = 'auto';
-                el.onerror = () => {};
-                try { el.load(); } catch (e) {}
-                game.sfxElements[name] = el;
+                if (!game.sfxFactoryElements[name]) {
+                    const el = new Audio(path);
+                    el.preload = 'auto';
+                    el.onerror = () => {};
+                    try { el.load(); } catch (e) {}
+                    game.sfxFactoryElements[name] = el;
+                }
+                // Don't clobber a live sound-tester override that may have already
+                // been applied to this name before its factory load finished.
+                if (!game.sfxElements[name]) game.sfxElements[name] = game.sfxFactoryElements[name];
             };
 
             // v59.7c note: pre-building every pool clone here was tried and starved
@@ -1476,7 +1537,10 @@
                         fetch(path)
                             .then(r => r.arrayBuffer())
                             .then(buf => _actx.decodeAudioData(buf))
-                            .then(decoded => { game.sfxBuffers[name] = decoded; })
+                            .then(decoded => {
+                                game.sfxFactoryBuffers[name] = decoded;
+                                if (!game.sfxBuffers[name]) game.sfxBuffers[name] = decoded;
+                            })
                             .catch(() => {});
                     });
                 // File-based sounds keep the stagger so decode never competes with
@@ -1487,7 +1551,10 @@
                             fetch(path)
                                 .then(r => r.arrayBuffer())
                                 .then(buf => _actx.decodeAudioData(buf))
-                                .then(decoded => { game.sfxBuffers[name] = decoded; })
+                                .then(decoded => {
+                                    game.sfxFactoryBuffers[name] = decoded;
+                                    if (!game.sfxBuffers[name]) game.sfxBuffers[name] = decoded;
+                                })
                                 .catch(() => {});
                         }, 2500 + i * 60);
                     });
@@ -1530,6 +1597,54 @@
             } catch (e) { return false; }
         }
 
+        // HTMLMediaElement.volume is hard-capped at 1.0 by spec — setting it higher
+        // is silently clamped, so the Sound Mixer's >100% boost had no effect once
+        // baseVolume*multiplier crossed 1 (which most sounds do well before the top
+        // of the slider). The standard fix is tapping the element through a WebAudio
+        // GainNode (gain.value has no upper clamp) — but on file:// specifically,
+        // Chromium treats a MediaElementAudioSourceNode built from a local file as
+        // tainted and SILENTLY OUTPUTS ZEROES (confirmed live: DevTools logs
+        // "MediaElementAudioSource outputs zeroes due to CORS access restrictions"
+        // even though playback looks fine) — actually worse than the original bug,
+        // since it kills the sound entirely instead of just capping it. Game assets
+        // load via GEN='assets/sfx/' relative paths, so this game IS file:// today.
+        // So: only take the GainNode route when NOT on file:// (a local dev server
+        // or real hosting — where this project's own fetch/decodeAudioData path
+        // already relies on the same non-tainted assumption and works). On file://
+        // we fall back to plain clamped el.volume — boost still applies fully up to
+        // whatever headroom a sound's base volume leaves below 1.0, it just can't
+        // exceed unity. See Development Docs for the write-up on lifting this cap
+        // (embedding sounds as data: URIs, or serving over a local web server).
+        const IS_FILE_PROTOCOL = (typeof location !== 'undefined' && location.protocol === 'file:');
+        function applyBoostedVolume(el, ctx, desiredVolume) {
+            if (IS_FILE_PROTOCOL || !ctx) {
+                el.volume = Math.max(0, Math.min(1, desiredVolume));
+                return;
+            }
+            if (el._boostGain) {
+                try {
+                    el._boostGain.gain.value = Math.max(0, desiredVolume);
+                    el.volume = 1;
+                    return;
+                } catch (e) { /* fall through to native volume below */ }
+            }
+            if (desiredVolume <= 1) {
+                el.volume = Math.max(0, Math.min(1, desiredVolume));
+                return;
+            }
+            try {
+                const src = ctx.createMediaElementSource(el);
+                const gainNode = ctx.createGain();
+                src.connect(gainNode);
+                gainNode.connect(getSfxOutputNode(ctx) || ctx.destination);
+                el._boostGain = gainNode;
+                el.volume = 1;
+                gainNode.gain.value = desiredVolume;
+            } catch (e) {
+                el.volume = Math.max(0, Math.min(1, desiredVolume));
+            }
+        }
+
         // Play a preloaded SFX from its reuse pool — no clone, no re-decode.
         // Cycles through a handful of preloaded elements so overlapping plays don't
         // cut each other off. Returns false if the sound has no pool yet.
@@ -1562,7 +1677,8 @@
                 const el = pool.els[pool.idx];
                 pool.idx = (pool.idx + 1) % pool.els.length;
                 if (!el) return false;
-                el.volume = Math.max(0, Math.min(1, (volume != null ? Math.max(0, Math.min(1, volume)) : 1) * getMixerVolumeMultiplier(name)));
+                const baseVol = volume != null ? Math.max(0, Math.min(1, volume)) : 1;
+                applyBoostedVolume(el, getAudioContext(), baseVol * getMixerVolumeMultiplier(name));
                 if (playbackRate != null) el.playbackRate = playbackRate;
                 try { el.currentTime = 0; } catch (e) {}
                 const p = el.play();
@@ -1580,7 +1696,8 @@
             try {
                 const copy = el.cloneNode();
                 copy.preload = 'auto';
-                copy.volume = Math.max(0, Math.min(1, (volume != null ? Math.max(0, Math.min(1, volume)) : 1) * getMixerVolumeMultiplier(name)));
+                const baseVol = volume != null ? Math.max(0, Math.min(1, volume)) : 1;
+                applyBoostedVolume(copy, getAudioContext(), baseVol * getMixerVolumeMultiplier(name));
                 if (playbackRate != null) copy.playbackRate = playbackRate;
                 if (copy.readyState === 0 && typeof copy.load === 'function') copy.load();
                 copy.play().catch(() => {});
@@ -2311,7 +2428,7 @@
                 width: 64,
                 height: 64,
                 health: 750,
-                speed: 0.35,
+                speed: 0.55,
                 color: '#4400aa',
                 shootRate: 9999999,
                 pattern: 'none',
@@ -3229,8 +3346,10 @@
                         game.debugMode = !game.debugMode;
                     }
                     
-                    // Mute toggle with M key
-                    if (e.key.toLowerCase() === 'm') {
+                    // Mute toggle with M key (bare — Ctrl+Shift+M is the Sound Mixer's own
+                    // shortcut and was silently muting the game as a side effect since this
+                    // had no modifier guard)
+                    if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
                         onMuteToggle();
                         console.log('Mute toggled via M key:', game.muted);
                     }
@@ -10751,7 +10870,10 @@
                         ctx.strokeStyle = `rgba(${160 - ri * 20}, ${20 + ri * 10}, 255, ${alpha})`;
                         ctx.lineWidth = 2.2 - ri * 0.4;
                         ctx.shadowColor = '#8800ff';
-                        ctx.shadowBlur = 8;
+                        // v59.8: shadowBlur is expensive and gets drawn twice while the hit-flash
+                        // silhouette pass re-renders this body — skip it on that pass (perf only,
+                        // the flash mask doesn't need the blur to look right)
+                        ctx.shadowBlur = game._silhouetteRedraw ? 0 : 8;
                         ctx.beginPath();
                         ctx.ellipse(0, 0, rr * 0.55, rr, 0, 0, Math.PI * 2);
                         ctx.stroke();
@@ -10776,7 +10898,7 @@
                         const wAlpha = 0.5 + Math.sin(t * 2.5 + w * 1.1) * 0.3;
                         ctx.fillStyle = `rgba(200, 80, 255, ${wAlpha})`;
                         ctx.shadowColor = '#aa00ff';
-                        ctx.shadowBlur = 6;
+                        ctx.shadowBlur = game._silhouetteRedraw ? 0 : 6; // v59.8: perf — see rings above
                         ctx.beginPath();
                         ctx.arc(wx, wy, 2.5 + Math.sin(t * 4 + w) * 1, 0, Math.PI * 2);
                         ctx.fill();
@@ -20801,8 +20923,12 @@
                 }
             }
 
-            // When a Void Pure enemy dies, nearby generator portals implode
-            if (enemy.classification === 'Void Pure' && game.generatorPortals && game.generatorPortals.length > 0) {
+            // When a Void Pure enemy dies, nearby generator portals implode.
+            // v59.8: generators themselves are excluded — a generator dying near its own
+            // (or another generator's) portal should never pop it; only other Void Pure
+            // enemies exploding nearby can destroy a portal.
+            if (enemy.classification === 'Void Pure' && enemy.type !== 'void_generator' &&
+                game.generatorPortals && game.generatorPortals.length > 0) {
                 checkGeneratorPortalDestruction(enemy.x, enemy.y);
             }
 
@@ -21603,12 +21729,21 @@
                     playSfxVariant('PureVoid_Death', 0.58 * _dsMul, 0.1, 0.04, 0, sizeRate);
                 } else {
                     const hp = _dtpl.health || 30;
-                    const expl = hp >= 350 ? 'Explosion_Big' : hp >= 90 ? 'Explosion_Medium'
-                        : (Math.random() < 0.5 ? 'Explosion_Small' : 'Explosion_Small_2');
+                    let expl;
+                    if (hp >= 350) expl = 'Explosion_Big';
+                    else if (hp >= 90) expl = 'Explosion_Medium';
+                    else {
+                        // Alternate strictly between the two small-explosion takes (rather
+                        // than coin-flipping, which can streak the same one several kills
+                        // in a row) so back-to-back small-enemy kills sound varied.
+                        game._explosionSmallToggle = !game._explosionSmallToggle;
+                        expl = game._explosionSmallToggle ? 'Explosion_Small' : 'Explosion_Small_2';
+                    }
                     playSfxVariant(expl, 0.6 * _dsMul, 0.1, 0.04, 0, sizeRate);
                 }
             } else {
-                playSfxVariant('Explosion_Small', 0.52 * _dsMul, 0.1, 0.05);
+                game._explosionSmallToggle = !game._explosionSmallToggle;
+                playSfxVariant(game._explosionSmallToggle ? 'Explosion_Small' : 'Explosion_Small_2', 0.52 * _dsMul, 0.1, 0.05);
             }
             
             // Warship is handled below with its own guard — allow it to always fire
@@ -22043,18 +22178,23 @@
             game.generatorPortals.push({
                 x, y,
                 speed: 0.2,
+                // v59.9: portals drift down a randomized cone instead of a dead-straight
+                // line — set once at creation so each portal commits to a slight, a
+                // moderate, or a pronounced diagonal descent rather than wobbling around.
+                // v59.10: widened cone (was ±27.7°) for more noticeable left/right wander
+                // while still guaranteeing more downward motion than sideways (cos(45°)=sin(45°)).
+                driftAngle: (Math.random() * 2 - 1) * (Math.PI / 4), // up to ±45° off vertical
                 spinAngle: Math.random() * Math.PI * 2,
-                radius: 28 + Math.random() * 12,
+                radius: 38 + Math.random() * 14,
                 // v59.7: game-time cooldown in frames (was wall-clock spawnTimer/spawnInterval);
                 // first wave in ~2–5.5s of game time, matching the old Date.now offset
                 spawnCooldown: (2000 + Math.random() * 3500) / (1000 / 60),
-                life: 1200 + Math.floor(Math.random() * 600),
-                maxLife: 1800,
                 state: 'open',
                 pulsePhase: Math.random() * Math.PI * 2,
                 implosionTimer: 0,
                 implosionMaxTimer: 45,
-                beamSourceX: 0, beamSourceY: 0
+                beamSourceX: 0, beamSourceY: 0,
+                ripples: [] // v59.8: expanding rings emitted when the portal spawns an enemy
             });
         }
 
@@ -22101,9 +22241,10 @@
                         continue;
                     }
                 } else {
-                    // Move slowly down
-                    p.y += p.speed * frameScale;
-                    p.life -= frameScale;
+                    // v59.9: move down along the cone-angle drift set at creation, not
+                    // always straight down
+                    p.x += Math.sin(p.driftAngle) * p.speed * frameScale;
+                    p.y += Math.cos(p.driftAngle) * p.speed * frameScale;
                     // Spawn enemies periodically
                     // v59.7: game-time cooldown (was Date.now-based — didn't respect slow-motion)
                     if (p.spawnCooldown === undefined) p.spawnCooldown = 0;
@@ -22122,14 +22263,65 @@
                                 lastShot: now - Math.random() * 800,
                                 fadeAlpha: 0,
                                 portalFadeIn: true,
-                                portalInvulTimer: 65
+                                portalInvulTimer: 65,
+                                // v59.10: FOUND BUG — spawnEnemy() normally seeds these generic
+                                // movement fields for every enemy, but this portal-side spawn
+                                // path skipped them. void_soldier's movement unconditionally does
+                                // `enemy.x += enemy.erraticDirection * ...` every frame; left
+                                // undefined here, that's `undefined * n` = NaN, which permanently
+                                // poisons enemy.x. The next frame's void-aura glow effect then
+                                // calls ctx.createRadialGradient(enemy.x, ...) on this enemy,
+                                // which THROWS on a NaN coordinate — caught by the top-level
+                                // per-frame try/catch in gameLoop(), aborting and skipping the
+                                // *entire* frame (bullets included) with no visible cause. Since
+                                // a NaN-positioned enemy can never collide with anything again,
+                                // it kept throwing on every frame for the rest of its life.
+                                zigzagTime: Math.random() * Math.PI * 2,
+                                droneErraticTimer: Math.floor(Math.random() * 30),
+                                teleportCooldown: 0,
+                                canTeleport: true,
+                                specialVariant: false,
+                                lastErraticMove: Math.floor(Math.random() * 60),
+                                erraticDirection: Math.random() < 0.5 ? -1 : 1
                             };
+                            if (type === 'void_soldier') {
+                                newEnemy.teleportWarning = false;
+                                newEnemy.teleportWarningTimer = 0;
+                            }
                             game.enemies.push(newEnemy);
+                            // v59.9: a few staggered ripples (instead of one) cascading
+                            // outward mark the spawn
+                            if (!p.ripples) p.ripples = [];
+                            for (let rc = 0; rc < 4; rc++) {
+                                p.ripples.push({ radius: p.radius * 0.5, alpha: 0.8, delay: rc * 6 });
+                            }
                         }
                         p.spawnCooldown = (4500 + Math.random() * 3500) / (1000 / 60);
                     }
-                    if (p.y > canvas.height + 60 || p.life <= 0) {
+                    // v59.9: despawn only once every visual element (disk + widest ripple)
+                    // has fully cleared the screen — the old p.life timeout (≤30s) expired
+                    // portals long before their slow 0.2px/frame descent could cross a
+                    // 600px-tall canvas, popping them mid-screen
+                    const visualMargin = p.radius * 2.6 + 20;
+                    const offBottom = p.y - visualMargin > canvas.height;
+                    const offSide = p.x < -visualMargin || p.x > canvas.width + visualMargin;
+                    if (offBottom || offSide) {
                         game.generatorPortals.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                // v59.8/9: expand and fade ripples regardless of portal state; staggered
+                // ripples wait out their delay before they start expanding
+                if (p.ripples && p.ripples.length > 0) {
+                    for (let r = p.ripples.length - 1; r >= 0; r--) {
+                        const rp = p.ripples[r];
+                        if (rp.delay > 0) { rp.delay -= frameScale; continue; }
+                        // v59.10: slower outward expansion (was 2.6/0.018) so the rings
+                        // read as a gradual pulse instead of a quick blip
+                        rp.radius += 1.3 * frameScale;
+                        rp.alpha -= 0.009 * frameScale;
+                        if (rp.alpha <= 0 || rp.radius > p.radius * 2.6) p.ripples.splice(r, 1);
                     }
                 }
             }
@@ -22153,6 +22345,38 @@
                 const drawR = r * (1 - imploseProg * 0.9) * pulse;
                 if (drawR < 1) return;
                 ctx.save();
+                // v59.8: visual link — a beam connects the exploding Void Pure enemy to
+                // the portal for the first part of the implosion, before the final burst
+                if (p.state === 'imploding' && p.implosionTimer < p.implosionMaxTimer * 0.6) {
+                    const linkAlpha = 1 - (p.implosionTimer / (p.implosionMaxTimer * 0.6));
+                    ctx.save();
+                    const beamGrad = ctx.createLinearGradient(p.beamSourceX, p.beamSourceY, p.x, p.y);
+                    beamGrad.addColorStop(0, `rgba(255, 255, 255, ${0.9 * linkAlpha})`);
+                    beamGrad.addColorStop(1, `rgba(180, 60, 255, ${0.7 * linkAlpha})`);
+                    ctx.strokeStyle = beamGrad;
+                    ctx.lineWidth = 3;
+                    ctx.shadowColor = '#cc44ff';
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath();
+                    ctx.moveTo(p.beamSourceX, p.beamSourceY);
+                    ctx.lineTo(p.x, p.y);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                // v59.8: spawn ripples — expanding rings from the moment an enemy emerges
+                if (p.ripples && p.ripples.length > 0) {
+                    ctx.save();
+                    for (let r = 0; r < p.ripples.length; r++) {
+                        const rp = p.ripples[r];
+                        if (rp.alpha <= 0 || rp.delay > 0) continue;
+                        ctx.strokeStyle = `rgba(180, 80, 255, ${rp.alpha})`;
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.ellipse(p.x, p.y, rp.radius * 0.6, rp.radius, 0, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
                 // Core void disk
                 const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, drawR);
                 grad.addColorStop(0,    'rgba(0, 0, 10, 0.98)');
@@ -22189,15 +22413,6 @@
                     ctx.beginPath();
                     ctx.arc(wx, wy, 2 + Math.sin(p.pulsePhase + w * 1.3) * 1, 0, Math.PI * 2);
                     ctx.fill();
-                }
-                // Kill hint label (top of portal)
-                if (p.state === 'open' && drawR > 20) {
-                    ctx.globalAlpha = 0.55 + Math.sin(p.pulsePhase * 1.5) * 0.2;
-                    ctx.font = '9px monospace';
-                    ctx.textAlign = 'center';
-                    ctx.fillStyle = '#cc88ff';
-                    ctx.shadowBlur = 0;
-                    ctx.fillText('[VOID PURE]', p.x, p.y - drawR - 5);
                 }
                 ctx.shadowBlur = 0;
                 ctx.restore();
@@ -28999,7 +29214,7 @@
                     { type: 'void_asteroid_layer', name: 'Void Asteroid Layer', classification: 'Void Corrupted',  dimension: null,               desc: 'Void-infused rocky carrier - 480 HP, 220 points - Slow descent, launches volleys of void asteroids.', color: '#3d1f5e' },
                     { type: 'void_protector',   name: 'Void Protector',        classification: 'Void Pure',       dimension: null,               desc: 'Immense void guardian - 1400 HP, 350 points - Does not fire directly. Instead projects powerful void shields onto nearby allies.', color: '#5b1a70' },
                     { type: 'void_turret',      name: 'Void Turret',           classification: 'Void Pure',       dimension: null,               desc: 'Slow-moving void cannon - 330 HP, 80 points - Fires precise void beams in multiple patterns. Threat increases dramatically at close range.', color: '#6a0dad' },
-                    { type: 'void_generator',   name: 'Void Generator',        classification: 'Void Pure',       dimension: null,               desc: 'Void rift engine - 750 HP, 280 points - Slowly descends and drops indestructible void portals that spawn Void Corrupted enemies. Portals only implode when a Void Pure enemy is killed within range.', color: '#4400aa' },
+                    { type: 'void_generator',   name: 'Void Generator',        classification: 'Void Pure',       dimension: null,               desc: 'Void rift engine - 750 HP, 280 points - Slowly descends and drops indestructible void portals that spawn Void Corrupted enemies. Portals only implode when another Void Pure enemy is killed within range (generators themselves and their own spawns cannot pop them).', color: '#4400aa' },
                     { type: 'defender_normal',  name: 'Defender Normal',       classification: 'Defender',        dimension: null,               desc: 'Rogue human fighter - 45 HP, 18 points - Sinusoidal sway, 3-shot burst.', color: '#cc2222' },
                     { type: 'defender_fast',    name: 'Defender Fast',         classification: 'Defender',        dimension: null,               desc: 'Needle interceptor - 30 HP, 22 points - Aggressive zigzag, rapid double-shot.', color: '#ffaa00' },
                     { type: 'defender_heavy',   name: 'Defender Heavy',        classification: 'Defender',        dimension: null,               desc: 'Twin-engine bomber - 120 HP, 40 points - Arched descent, triple-barrel + cluster bombs.', color: '#991111' },
@@ -31310,6 +31525,7 @@
             }
 
             drawBossBackground(); // Draw boss background elements (like landmass) behind player
+            drawGeneratorPortals(); // v59.8: drawn early so player/enemy bullets never render underneath the portal disk
             drawPowerups();
             drawPlayer();
             drawEnemies();
@@ -31320,7 +31536,6 @@
             drawEnemyBullets();
             drawAsteroids();
             drawEnemyShrapnel();
-            drawGeneratorPortals();
             drawVoidAsteroidEffects();
             drawLances();
             drawParticles();
@@ -31940,9 +32155,29 @@
                 librarySortBy: 'name', // 'name', 'length', 'class'
                 soundClasses: {}, // Maps sound names to their class category
 
+                // v59.9: preview list for the new generate_sfx.js toolkit primitives —
+                // static WAVs in assets/sfx/_toolkit_demos/, not part of sfxList/gameplay.
+                toolkitDemos: [
+                    { name: 'Toolkit_Demo_PinkNoise', label: 'Pink Noise', desc: 'Warm 1/f noise swell' },
+                    { name: 'Toolkit_Demo_ResonantSweep', label: 'Resonant Sweep', desc: 'Filter with a real resonance peak' },
+                    { name: 'Toolkit_Demo_Chorus', label: 'Chorus', desc: 'Detuned unison stack + chorus widening' },
+                    { name: 'Toolkit_Demo_Tremolo', label: 'Tremolo', desc: 'Amplitude-pulsing tone' },
+                    { name: 'Toolkit_Demo_Foldback', label: 'Foldback', desc: 'Wavefolder distortion' },
+                    { name: 'Toolkit_Demo_Bitcrush', label: 'Bitcrush', desc: 'Lo-fi digital crunch' },
+                    { name: 'Toolkit_Demo_PWM', label: 'PWM', desc: 'Variable duty-cycle oscillator sweep' },
+                    { name: 'Toolkit_Demo_Unison', label: 'Detuned Unison', desc: '7-voice supersaw stack' },
+                    { name: 'Toolkit_Demo_Pluck', label: 'Pluck', desc: 'Karplus-Strong plucked string' },
+                    { name: 'Toolkit_Demo_Echo', label: 'Echo', desc: 'Discrete decaying echo taps' },
+                    { name: 'Toolkit_Demo_Stutter', label: 'Stutter', desc: 'Glitch-chop repeats' },
+                    { name: 'Toolkit_Demo_Morph', label: 'Morph', desc: 'Crossfade: metal thunk → FM warble' },
+                    { name: 'Toolkit_Demo_StringPing', label: 'String Ping', desc: 'Composite: crisp metallic snap' },
+                    { name: 'Toolkit_Demo_WindSwell', label: 'Wind Swell', desc: 'Composite: organic atmospheric swell' },
+                    { name: 'Toolkit_Demo_AlienScreech', label: 'Alien Screech', desc: 'Composite: harsh distorted Void voice' },
+                    { name: 'Toolkit_Demo_DigitalGlitch', label: 'Digital Glitch', desc: 'Composite: corrupted-machine texture' }
+                ],
+
                 // Reserved sounds system
                 reservedSounds: {}, // { reservedSoundName: { backupOf: 'original sound', generatedParams: {...} } }
-                soundBackups: {}, // { originalSound: { previous: previousAssignment, previousVolume, previousBackupList } }
                 unassignedSounds: [], // Array of reserved sound names not yet assigned
 
                 // Slot state tracking: { category: { slotIndex: { state: 'empty'|'unassigned'|'assigned', soundId, audioBlob } } }
@@ -31973,6 +32208,7 @@
                     const box = document.getElementById('soundTestingToggleBox');
                     if (box) box.addEventListener('click', () => this.toggle());
                     this.updateBoxState();
+                    this.applyAllApprovedSoundsToGame();
                 },
 
                 setupDragAndMinimize() {
@@ -32041,20 +32277,6 @@
                     }
                 },
 
-                // Reserve a generated sound variation
-                reserveSound(originalSoundName, variationParams, slotIndex) {
-                    const reservedName = `${originalSoundName}_reserved_${Date.now()}_${slotIndex}`;
-                    this.reservedSounds[reservedName] = {
-                        backupOf: originalSoundName,
-                        generatedParams: variationParams,
-                        slotIndex: slotIndex,
-                        empty: false
-                    };
-                    this.unassignedSounds.push(reservedName);
-                    this.saveReservedSounds();
-                    return reservedName;
-                },
-
                 // Delete a sound (move to "recycle bin" - logical deletion)
                 deleteSound(soundName) {
                     if (this.reservedSounds[soundName]) {
@@ -32066,55 +32288,21 @@
                     return false;
                 },
 
-                // Mark a slot as empty
-                markSlotEmpty(originalSoundName, slotIndex) {
-                    const emptySlotName = `${originalSoundName}_slot_${slotIndex}_empty`;
-                    this.reservedSounds[emptySlotName] = {
-                        backupOf: originalSoundName,
-                        empty: true,
-                        slotIndex: slotIndex
-                    };
-                    this.unassignedSounds.push(emptySlotName);
-                    this.saveReservedSounds();
-                },
+                // Un-assign `cat` back to its factory default sound. Used by the Mixer's
+                // per-strip "↶ Revert" button. Live audio goes back to the original
+                // immediately (via restoreFactorySound); the slot that was approved is
+                // left untouched in the Variations tab (still generated, just no longer
+                // the live one) so it can be re-approved later without regenerating it.
+                revertSound(cat) {
+                    const prefs = this.preferences[cat];
+                    if (!prefs || prefs.approved === null) return false;
 
-                // Assign a reserved sound to the game
-                assignReservedSound(reservedSoundName, originalSoundName, currentAssignment) {
-                    // Create backup of what we're replacing
-                    this.soundBackups[originalSoundName] = {
-                        previous: currentAssignment,
-                        previousVolume: (soundMixer && soundMixer.gameVolumes) ? soundMixer.gameVolumes[originalSoundName] : 100,
-                        timestamp: Date.now(),
-                        previousReservedSound: null
-                    };
-
-                    // Update assignment
-                    this.soundAssignments[originalSoundName] = `[BACKUP] ${reservedSoundName}`;
-
-                    // Update mixer
-                    if (soundMixer) {
-                        soundMixer.soundAssignments[originalSoundName] = this.soundAssignments[originalSoundName];
-                        soundMixer.savePreferences();
-                    }
+                    prefs.approved = null;
+                    this.restoreFactorySound(cat);
 
                     this.savePreferences();
-                },
-
-                // Revert to previous sound
-                revertSound(originalSoundName) {
-                    const backup = this.soundBackups[originalSoundName];
-                    if (backup) {
-                        this.soundAssignments[originalSoundName] = backup.previous;
-                        if (soundMixer) {
-                            soundMixer.soundAssignments[originalSoundName] = backup.previous;
-                            soundMixer.gameVolumes[originalSoundName] = backup.previousVolume;
-                            soundMixer.savePreferences();
-                        }
-                        delete this.soundBackups[originalSoundName];
-                        this.savePreferences();
-                        return true;
-                    }
-                    return false;
+                    if (this.currentCategory === cat) this.updatePanel();
+                    return true;
                 },
 
                 loadReservedSounds() {
@@ -32124,7 +32312,6 @@
                             const data = JSON.parse(saved);
                             this.reservedSounds = data.reserved || {};
                             this.unassignedSounds = data.unassigned || [];
-                            this.soundBackups = data.backups || {};
                             this.nextUnassignedNum = data.nextUnassignedNum || 1;
                         }
                     } catch (e) {
@@ -32137,7 +32324,6 @@
                         const data = {
                             reserved: this.reservedSounds,
                             unassigned: this.unassignedSounds,
-                            backups: this.soundBackups,
                             nextUnassignedNum: this.nextUnassignedNum
                         };
                         localStorage.setItem('soundTestingReserved', JSON.stringify(data));
@@ -32296,6 +32482,8 @@
                                 this.bindLibraryControls();
                             } else if (this.currentTab === 'unassigned') {
                                 this.updateUnassignedView();
+                            } else if (this.currentTab === 'demos') {
+                                this.updateDemosView();
                             }
                         }
                     }
@@ -32310,17 +32498,21 @@
                     const varTab = panel.querySelector('#variationsTab');
                     const libTab = panel.querySelector('#libraryTab');
                     const unassignedTab = panel.querySelector('#unassignedTab');
+                    const demosTab = panel.querySelector('#demosTab');
                     const varContent = panel.querySelector('#variationsContent');
                     const libContent = panel.querySelector('#libraryContent');
                     const unassignedContent = panel.querySelector('#unassignedContent');
+                    const demosContent = panel.querySelector('#demosContent');
 
                     // Reset all tabs
                     if (varTab) varTab.style.background = 'rgba(74, 144, 226, 0.2)';
                     if (libTab) libTab.style.background = 'rgba(74, 144, 226, 0.2)';
                     if (unassignedTab) unassignedTab.style.background = 'rgba(74, 144, 226, 0.2)';
+                    if (demosTab) demosTab.style.background = 'rgba(74, 144, 226, 0.2)';
                     if (varContent) varContent.style.display = 'none';
                     if (libContent) libContent.style.display = 'none';
                     if (unassignedContent) unassignedContent.style.display = 'none';
+                    if (demosContent) demosContent.style.display = 'none';
 
                     if (tab === 'variations') {
                         if (varTab) varTab.style.background = 'rgba(74, 144, 226, 0.6)';
@@ -32335,6 +32527,10 @@
                         if (unassignedTab) unassignedTab.style.background = 'rgba(74, 144, 226, 0.6)';
                         if (unassignedContent) unassignedContent.style.display = 'flex';
                         this.updateUnassignedView();
+                    } else if (tab === 'demos') {
+                        if (demosTab) demosTab.style.background = 'rgba(74, 144, 226, 0.6)';
+                        if (demosContent) demosContent.style.display = 'flex';
+                        this.updateDemosView();
                     }
                 },
 
@@ -32527,7 +32723,17 @@
                 loadPreferences() {
                     try {
                         const saved = localStorage.getItem('soundTestPreferences');
-                        this.preferences = saved ? JSON.parse(saved) : {};
+                        const data = saved ? JSON.parse(saved) : null;
+                        if (data && data.__v2) {
+                            // v2: preferences + the actual generated configs behind each
+                            // "approved" slot, so an assigned sound still resolves to a
+                            // real config (and can be re-applied to the game) after reload.
+                            this.preferences = data.preferences || {};
+                            this.categoryVariations = data.categoryVariations || {};
+                        } else {
+                            // Legacy format: bare preferences object, no saved configs.
+                            this.preferences = data || {};
+                        }
                     } catch (e) {
                         console.warn('Could not load sound preferences:', e);
                         this.preferences = {};
@@ -32537,7 +32743,11 @@
 
                 savePreferences() {
                     try {
-                        localStorage.setItem('soundTestPreferences', JSON.stringify(this.preferences));
+                        localStorage.setItem('soundTestPreferences', JSON.stringify({
+                            __v2: true,
+                            preferences: this.preferences,
+                            categoryVariations: this.categoryVariations
+                        }));
                         console.log('Sound preferences saved');
                     } catch (e) {
                         console.warn('Could not save sound preferences:', e);
@@ -32596,72 +32806,76 @@
                 },
 
                 // Classify explosion size and sub-type — returns shape params for generateVariations
+                // `depth` and `crackles` explicitly control the noise/filter explosion
+                // core's heaviness (see _buildExplosionSamples) — pulled apart from
+                // bassWeight and widened so small vs. large vs. boss are unmistakably
+                // different (0.4 = a snappy little pop, 1.9 = a huge, room-shaking boom).
                 classifyExplosionSize(soundName) {
                     const name = soundName.toLowerCase();
                     // Boss — epic, full-spectrum, always ring+crack
                     if (name.includes('boss') || name.includes('void_master') || name.includes('gatekeeper'))
                         return { size: 'boss', subType: 'boss', durationMult: 3.5,
                                  intensityMin: 0.88, intensityRange: 0.12,
-                                 pitch: [30, 75], decay: [0.55, 0.80],
+                                 pitch: [30, 75], decay: [0.55, 0.80], depth: 1.9, crackles: 5,
                                  bassWeight: 1.0, metalRing: false, clusterPops: 0, voidWarp: false };
                     // Pure void entity — deep alien resonance, strong warp shimmer
                     if (name.includes('pure_void') || name.includes('pure void') || name.includes('entity'))
                         return { size: 'huge', subType: 'pure_void', durationMult: 2.5,
                                  intensityMin: 0.82, intensityRange: 0.15,
-                                 pitch: [30, 65], decay: [0.50, 0.75],
+                                 pitch: [30, 65], decay: [0.50, 0.75], depth: 1.6, crackles: 4,
                                  bassWeight: 0.9, metalRing: false, clusterPops: 0, voidWarp: true };
                     // Void ship — alien but ship-sized, warp shimmer, moderate bass
                     if (name.includes('void_ship') || (name.includes('void') && !name.includes('cluster') && !name.includes('bomb')))
                         return { size: 'big', subType: 'void_ship', durationMult: 1.6,
                                  intensityMin: 0.72, intensityRange: 0.25,
-                                 pitch: [40, 110], decay: [0.38, 0.62],
+                                 pitch: [40, 110], decay: [0.38, 0.62], depth: 1.35, crackles: 3,
                                  bassWeight: 0.72, metalRing: false, clusterPops: 0, voidWarp: true };
                     // Cluster bomb — lighter, staggered pops, higher frequency
                     if (name.includes('cluster'))
                         return { size: 'big', subType: 'cluster', durationMult: 1.3,
                                  intensityMin: 0.68, intensityRange: 0.28,
-                                 pitch: [80, 220], decay: [0.22, 0.48],
+                                 pitch: [80, 220], decay: [0.22, 0.48], depth: 0.85, crackles: 2,
                                  bassWeight: 0.3, metalRing: false, clusterPops: 3, voidWarp: false };
                     // Regular bomb — heavy bass, long decay, deep thud
                     if (name.includes('bomb'))
                         return { size: 'big', subType: 'bomb', durationMult: 1.5,
                                  intensityMin: 0.75, intensityRange: 0.20,
-                                 pitch: [38, 85], decay: [0.50, 0.75],
+                                 pitch: [38, 85], decay: [0.50, 0.75], depth: 1.55, crackles: 3,
                                  bassWeight: 0.88, metalRing: false, clusterPops: 0, voidWarp: false };
                     // Metal ship — metallic ring transients, bright high end
                     if (name.includes('metal'))
                         return { size: 'big', subType: 'metal_ship', durationMult: 1.2,
                                  intensityMin: 0.68, intensityRange: 0.28,
-                                 pitch: [100, 300], decay: [0.18, 0.42],
+                                 pitch: [100, 300], decay: [0.18, 0.42], depth: 0.95, crackles: 3,
                                  bassWeight: 0.28, metalRing: true, clusterPops: 0, voidWarp: false };
                     // Large ship
                     if (name.includes('_big') || name.includes('_large'))
                         return { size: 'large', subType: 'large', durationMult: 1.6,
                                  intensityMin: 0.75, intensityRange: 0.22,
-                                 pitch: [50, 140], decay: [0.38, 0.62],
+                                 pitch: [50, 140], decay: [0.38, 0.62], depth: 1.15, crackles: 3,
                                  bassWeight: 0.68, metalRing: false, clusterPops: 0, voidWarp: false };
                     // Medium ship
                     if (name.includes('_medium'))
                         return { size: 'medium', subType: 'medium', durationMult: 1.0,
                                  intensityMin: 0.65, intensityRange: 0.30,
-                                 pitch: [70, 190], decay: [0.28, 0.52],
+                                 pitch: [70, 190], decay: [0.28, 0.52], depth: 0.85, crackles: 2,
                                  bassWeight: 0.52, metalRing: false, clusterPops: 0, voidWarp: false };
                     // Little — smallest ship explosions, very short and high-pitched
                     if (name.includes('_small_2') || name.includes('_tiny') || name.includes('_little'))
                         return { size: 'little', subType: 'little', durationMult: 0.42,
                                  intensityMin: 0.45, intensityRange: 0.42,
-                                 pitch: [160, 450], decay: [0.08, 0.28],
+                                 pitch: [160, 450], decay: [0.08, 0.28], depth: 0.4, crackles: 1,
                                  bassWeight: 0.08, metalRing: false, clusterPops: 0, voidWarp: false };
                     // Small ship
                     if (name.includes('_small'))
                         return { size: 'small', subType: 'small', durationMult: 0.65,
                                  intensityMin: 0.55, intensityRange: 0.38,
-                                 pitch: [100, 300], decay: [0.14, 0.38],
+                                 pitch: [100, 300], decay: [0.14, 0.38], depth: 0.6, crackles: 2,
                                  bassWeight: 0.22, metalRing: false, clusterPops: 0, voidWarp: false };
                     // Default: medium
                     return { size: 'medium', subType: 'medium', durationMult: 1.0,
                              intensityMin: 0.65, intensityRange: 0.30,
-                             pitch: [70, 190], decay: [0.28, 0.52],
+                             pitch: [70, 190], decay: [0.28, 0.52], depth: 0.85, crackles: 2,
                              bassWeight: 0.52, metalRing: false, clusterPops: 0, voidWarp: false };
                 },
 
@@ -32699,6 +32913,8 @@
                                 pitch: pitchLo + r() * (pitchHi - pitchLo),
                                 decay: decayLo + r() * (decayHi - decayLo),
                                 noiseAmount: 0.4 + r() * 0.6,
+                                depth: expSize.depth * (0.75 + r() * 0.5),
+                                crackles: expSize.crackles,
                                 bassWeight: expSize.bassWeight,
                                 metalRing: expSize.metalRing,
                                 clusterPops: expSize.clusterPops,
@@ -32866,11 +33082,191 @@
                     }
                 },
 
+                // ── Explosion synthesis helpers ──
+                // A real explosion is broadband noise shaped by closing filters plus a
+                // little felt sub-bass — not a pitched oscillator sweep (that's what a
+                // laser/bullet sound IS, which is why the old per-variant designs kept
+                // reading as "pew" instead of "boom"). These mirror tools/generate_sfx.js's
+                // already-proven explosion() recipe so the tester's live sounds match the
+                // shipped default sounds' character.
+                _envExpDecay(T, delay = 0) {
+                    return (t) => (t < delay ? 0 : Math.exp(-(t - delay) / T));
+                },
+                _envAttackDecay(atk, T) {
+                    return (t) => (t < atk ? t / atk : Math.exp(-(t - atk) / T));
+                },
+                _synthWhiteNoise(sampleRate, sec, ampFn) {
+                    const len = Math.max(1, Math.round(sec * sampleRate));
+                    const b = new Float32Array(len);
+                    for (let i = 0; i < len; i++) b[i] = (Math.random() * 2 - 1) * ampFn(i / sampleRate);
+                    return b;
+                },
+                _synthBrownNoise(sampleRate, sec, ampFn) {
+                    const len = Math.max(1, Math.round(sec * sampleRate));
+                    const b = new Float32Array(len);
+                    let v = 0;
+                    for (let i = 0; i < len; i++) {
+                        v = v * 0.985 + (Math.random() * 2 - 1) * 0.12;
+                        b[i] = v * 6 * ampFn(i / sampleRate);
+                    }
+                    return b;
+                },
+                _synthTone(sampleRate, sec, freqFn, ampFn) {
+                    const len = Math.max(1, Math.round(sec * sampleRate));
+                    const b = new Float32Array(len);
+                    let ph = 0;
+                    for (let i = 0; i < len; i++) {
+                        const t = i / sampleRate;
+                        ph += freqFn(t) / sampleRate;
+                        b[i] = Math.sin(2 * Math.PI * ph) * ampFn(t);
+                    }
+                    return b;
+                },
+                _applyOnePoleLowpass(arr, cutoffFn, sampleRate) {
+                    let y = 0;
+                    for (let i = 0; i < arr.length; i++) {
+                        const c = Math.max(20, cutoffFn(i / sampleRate));
+                        const k = 1 - Math.exp((-2 * Math.PI * c) / sampleRate);
+                        y += k * (arr[i] - y);
+                        arr[i] = y;
+                    }
+                    return arr;
+                },
+                _applyOnePoleHighpass(arr, cutoffFn, sampleRate) {
+                    let y = 0, xp = 0;
+                    for (let i = 0; i < arr.length; i++) {
+                        const c = Math.max(20, cutoffFn(i / sampleRate));
+                        const k = Math.exp((-2 * Math.PI * c) / sampleRate);
+                        const x = arr[i];
+                        y = k * (y + x - xp);
+                        xp = x;
+                        arr[i] = y;
+                    }
+                    return arr;
+                },
+
+                // Builds the mono sample buffer for one explosion. `freqScale` (from
+                // config.pitch, already size-tiered by classifyExplosionSize) shifts how
+                // bright/dark the impact and debris read — small ships stay crisp, big
+                // ones read duller/deeper. `depth` (also size-tiered) independently
+                // controls how much sub-bass rumble and how many debris crackles there
+                // are, so "how heavy this hits" and "how bright this hits" vary on two
+                // clear, size-driven axes instead of one blurred pitch sweep.
+                _buildExplosionSamples(ctx, config, intensity, freqScale, dcyK) {
+                    const sr = ctx.sampleRate;
+                    const sec = Math.max(0.05, config.duration);
+                    const bassWt = Math.max(0, Math.min(1, config.bassWeight != null ? config.bassWeight : 0.52));
+                    const depth = Math.max(0.3, Math.min(2.0, config.depth != null ? config.depth : 0.45 + bassWt * 1.3));
+                    const crackleCount = config.crackles != null ? config.crackles : Math.round(1 + depth * 2);
+                    const noiseWt = Math.max(0.5, Math.min(1.5, config.noiseAmount || 0.7));
+                    const variant = config.variant % 8;
+
+                    // Per-variant character — 4 real structural axes, not just cutoff
+                    // multipliers, so slots genuinely differ in texture instead of just
+                    // brightness: how punchy the impact transient is (thumpAtk/thumpT),
+                    // whether the body is a full lowpassed boom or a hollow/raspy banded
+                    // sound (hp — an extra highpass stage), how crackle-forward vs. clean
+                    // it is (crkAdd/crkGain), and how much sub-bass weight it carries
+                    // (bass, which also nudges the body's brown/white noise blend).
+                    const V = [
+                        { thumpAtk: 0.006, thumpT: 0.032, hp: 0,   crkAdd:  0, crkGain: 1.0,  bass: 1.0,  cutoff: 1.0  }, // 0 subtle thud
+                        { thumpAtk: 0.002, thumpT: 0.016, hp: 0,   crkAdd:  1, crkGain: 1.15, bass: 0.7,  cutoff: 1.35 }, // 1 crisp snap
+                        { thumpAtk: 0.012, thumpT: 0.045, hp: 260, crkAdd:  2, crkGain: 1.5,  bass: 0.55, cutoff: 1.15 }, // 2 scratchy fiery
+                        { thumpAtk: 0.003, thumpT: 0.02,  hp: 180, crkAdd:  1, crkGain: 1.2,  bass: 0.65, cutoff: 1.2  }, // 3 metallic edge
+                        { thumpAtk: 0.014, thumpT: 0.05,  hp: 0,   crkAdd:  2, crkGain: 1.1,  bass: 1.2,  cutoff: 0.95 }, // 4 cascading rumble
+                        { thumpAtk: 0.02,  thumpT: 0.07,  hp: 0,   crkAdd: -1, crkGain: 0.55, bass: 1.5,  cutoff: 0.55 }, // 5 earthy rumble
+                        { thumpAtk: 0.002, thumpT: 0.014, hp: 0,   crkAdd:  3, crkGain: 1.45, bass: 0.55, cutoff: 1.55 }, // 6 bright crackle
+                        { thumpAtk: 0.001, thumpT: 0.011, hp: 0,   crkAdd: -1, crkGain: 0.5,  bass: 1.45, cutoff: 0.65 }, // 7 deep whomp
+                    ][variant];
+                    const totalCrackles = Math.max(0, crackleCount + V.crkAdd);
+
+                    const len = Math.max(1, Math.round(sec * sr));
+                    const out = new Float32Array(len);
+                    const mixIn = (src, atSec, g) => {
+                        const o = Math.round(atSec * sr);
+                        for (let i = 0; i < src.length && o + i < out.length; i++) out[o + i] += src[i] * g;
+                    };
+
+                    // Initial thump — lowpassed noise burst, the percussive "hit". Attack/
+                    // decay shape (not just cutoff) varies by variant: some are a sharp
+                    // click, others a softer, rounder whumpf.
+                    mixIn(
+                        this._applyOnePoleLowpass(
+                            this._synthWhiteNoise(sr, 0.08, this._envAttackDecay(V.thumpAtk, V.thumpT)),
+                            () => (900 / Math.sqrt(depth)) * V.cutoff * freqScale, sr
+                        ), 0, 0.8 * intensity
+                    );
+
+                    // Main body — the sound's core, carrying most of its perceived size.
+                    // Blends brown noise (deep, rolling — a "boom") with white noise
+                    // (bright, crackly — a "pop"), weighted by depth (small ships lean
+                    // white/crackly, big ones lean brown/rumbly) and nudged by the
+                    // variant's own bass emphasis, so e.g. "earthy rumble" leans browner
+                    // than "crisp snap" even at the same size. Some variants additionally
+                    // run the body through a highpass stage for a hollow/raspy character
+                    // instead of a full lowpassed boom.
+                    const brownWeight = Math.max(0.15, Math.min(0.95, 0.2 + depth * 0.35 + (V.bass - 1) * 0.15));
+                    const bodyEnv = this._envAttackDecay(0.01, sec * (0.32 + dcyK * 0.28));
+                    const bodyBrown = this._synthBrownNoise(sr, sec, bodyEnv);
+                    const bodyWhite = this._synthWhiteNoise(sr, sec, bodyEnv);
+                    const body = new Float32Array(bodyBrown.length);
+                    for (let i = 0; i < body.length; i++) {
+                        body[i] = bodyBrown[i] * brownWeight + bodyWhite[i] * (1 - brownWeight) * 0.5;
+                    }
+                    this._applyOnePoleLowpass(
+                        body,
+                        (t) => Math.max(60, (700 / depth) * V.cutoff * freqScale * Math.exp(-t / (sec * 0.45))),
+                        sr
+                    );
+                    if (V.hp > 0) this._applyOnePoleHighpass(body, () => V.hp * freqScale, sr);
+                    mixIn(body, 0, 1.0 * intensity * (0.75 + noiseWt * 0.25));
+
+                    // Low whump — noise-based sub-bass weight, not tonal; scales with
+                    // depth (small ships barely get any) and the variant's bass emphasis
+                    mixIn(
+                        this._applyOnePoleLowpass(
+                            this._synthBrownNoise(sr, Math.min(sec, 0.5 * depth), this._envExpDecay((0.1 + dcyK * 0.25) * depth)),
+                            () => 130, sr
+                        ), 0, 0.7 * intensity * Math.min(1, depth) * V.bass
+                    );
+
+                    // Soft sub tone — only on genuinely big blasts, and kept deep enough
+                    // (starts at 55Hz, decaying) that it reads as a felt rumble, never a
+                    // laser/bullet-range pitched sweep (those start in the hundreds-to-
+                    // thousands of Hz)
+                    if (depth > 1.05) {
+                        mixIn(
+                            this._synthTone(sr, 0.5 * depth, (t) => 55 - t * 22, this._envExpDecay(0.17 * depth)),
+                            0, 0.3 * intensity * V.bass
+                        );
+                    }
+
+                    // Debris crackles — short lowpassed noise transients scattered through
+                    // the tail. Bigger blasts get more of them (raw count), small ones get
+                    // each crackle mixed relatively louder against their quieter body (a
+                    // little ship's death is basically all crackle/pop), and the variant's
+                    // own crkAdd/crkGain push some flavors toward "clean boom" (fewer,
+                    // quieter) and others toward "fiery debris" (more, louder, brighter).
+                    const crackleGainMul = (1.3 - Math.min(0.55, depth * 0.32)) * V.crkGain;
+                    const brightCrackle = V.crkGain > 1.25;
+                    for (let c = 0; c < totalCrackles; c++) {
+                        const at = 0.04 + Math.random() * sec * 0.55;
+                        const band = (brightCrackle ? (1400 + Math.random() * 1800) : (500 + Math.random() * 900)) * freqScale;
+                        mixIn(
+                            this._applyOnePoleLowpass(this._synthWhiteNoise(sr, 0.035, this._envExpDecay(0.014)), () => band, sr),
+                            at, (0.1 + Math.random() * 0.13) * intensity * crackleGainMul
+                        );
+                    }
+
+                    // Gentle saturation — barely-there, keeps peaks from sounding thin
+                    for (let i = 0; i < out.length; i++) out[i] = Math.tanh(out[i] * 1.05);
+                    return out;
+                },
+
                 playExplosionVariation(ctx, config) {
                     const now = ctx.currentTime;
                     const duration = config.duration;
                     const intensity = Math.max(0.5, Math.min(1, config.intensity));
-                    const variant = config.variant % 8; // 8 distinct explosion types
 
                     // Helper to normalize and boost quiet sounds
                     const normalizeGain = (intensity) => {
@@ -32880,440 +33276,18 @@
 
                     // Config-driven pitch/noise/decay scaling — gives each slot a distinct sonic character
                     const freqScale = Math.max(0.4, Math.min(3.0, (config.pitch || 100) / 100));
-                    const noiseWt   = Math.max(0.5, Math.min(1.5, config.noiseAmount || 0.7));
                     const dcyK      = Math.max(0.2, Math.min(0.8, config.decay || 0.4));
 
-                    // Normalize to 8 different variants with much more variety
-                    if (variant === 0) {
-                        // SUBTLE SWEEP THUD - Mid-range punch with gentle frequency sweep, balanced volume
-                        const osc = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const oscGain = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-                        const filter = ctx.createBiquadFilter();
-
-                        osc.type = 'sine';
-                        osc.frequency.setValueAtTime((80 + Math.random() * 80) * freqScale, now);
-                        osc.frequency.exponentialRampToValueAtTime(Math.max(15, (45 + Math.random() * 25) * freqScale), now + duration * 0.5);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseLen * (0.15 + dcyK * 0.5)));
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-
-                        oscGain.gain.setValueAtTime(0.6 * intensity, now);
-                        oscGain.gain.exponentialRampToValueAtTime(0.15, now + duration * 0.5);
-                        oscGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
-
-                        noiseGain.gain.setValueAtTime(0.5 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.1, now + duration * 0.4);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
-
-                        filter.type = 'lowpass';
-                        filter.frequency.setValueAtTime(400, now);
-                        filter.frequency.linearRampToValueAtTime(200, now + duration);
-
-                        osc.connect(oscGain);
-                        noiseBuffer.connect(noiseGain);
-                        oscGain.connect(filter);
-                        noiseGain.connect(filter);
-                        filter.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc.start(now);
-                        osc.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-
-                    } else if (variant === 1) {
-                        // CRISPY SNAP - Sharp high-pitched attack, minimal sustain
-                        const osc1 = ctx.createOscillator();
-                        const osc2 = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const gain1 = ctx.createGain();
-                        const gain2 = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-                        const filter = ctx.createBiquadFilter();
-
-                        osc1.type = 'triangle';
-                        osc1.frequency.setValueAtTime((120 + Math.random() * 80) * freqScale, now);
-                        osc1.frequency.exponentialRampToValueAtTime(Math.max(15, 40 * freqScale), now + duration * 0.5);
-
-                        osc2.type = 'sawtooth';
-                        osc2.frequency.setValueAtTime((200 + Math.random() * 100) * freqScale, now);
-                        osc2.frequency.exponentialRampToValueAtTime(Math.max(20, 60 * freqScale), now + duration * 0.5);
-
-                        gain1.gain.setValueAtTime(0.65 * intensity, now);
-                        gain1.gain.exponentialRampToValueAtTime(0.12, now + duration * 0.6);
-                        gain1.gain.exponentialRampToValueAtTime(0.03, now + duration);
-
-                        gain2.gain.setValueAtTime(0.55 * intensity, now);
-                        gain2.gain.exponentialRampToValueAtTime(0.08, now + duration * 0.6);
-                        gain2.gain.exponentialRampToValueAtTime(0.03, now + duration);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.pow(Math.exp(-i / (noiseLen * (0.12 + dcyK * 0.45))), 1.2);
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-                        noiseGain.gain.setValueAtTime(0.75 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.15, now + duration * 0.4);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
-
-                        filter.type = 'highpass';
-                        filter.frequency.setValueAtTime(150, now);
-                        filter.frequency.linearRampToValueAtTime(100, now + duration);
-
-                        osc1.connect(gain1);
-                        osc2.connect(gain2);
-                        noiseBuffer.connect(noiseGain);
-                        gain1.connect(filter);
-                        gain2.connect(filter);
-                        noiseGain.connect(filter);
-                        filter.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc1.start(now);
-                        osc1.stop(now + duration);
-                        osc2.start(now);
-                        osc2.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-
-                    } else if (variant === 2) {
-                        // SCRATCHY FIERY - High-frequency noise burst, minimal bass
-                        const osc = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const oscGain = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-                        const filter1 = ctx.createBiquadFilter();
-                        const filter2 = ctx.createBiquadFilter();
-
-                        osc.type = 'square';
-                        osc.frequency.setValueAtTime((250 + Math.random() * 150) * freqScale, now);
-                        osc.frequency.exponentialRampToValueAtTime(Math.max(20, 80 * freqScale), now + duration * 0.6);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1);
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-
-                        oscGain.gain.setValueAtTime(0.65 * intensity, now);
-                        oscGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.5);
-                        oscGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
-
-                        noiseGain.gain.setValueAtTime(0.8 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.25, now + duration * 0.5);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.05, now + duration);
-
-                        filter1.type = 'highpass';
-                        filter1.frequency.setValueAtTime(200, now);
-
-                        filter2.type = 'lowpass';
-                        filter2.frequency.setValueAtTime(5000, now);
-                        filter2.frequency.exponentialRampToValueAtTime(2000, now + duration);
-
-                        osc.connect(oscGain);
-                        noiseBuffer.connect(noiseGain);
-                        oscGain.connect(filter1);
-                        noiseGain.connect(filter1);
-                        filter1.connect(filter2);
-                        filter2.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc.start(now);
-                        osc.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-
-                    } else if (variant === 3) {
-                        // METALLIC CLANG - Sawtooth waves creating harsh metallic tone
-                        const osc1 = ctx.createOscillator();
-                        const osc2 = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const gain1 = ctx.createGain();
-                        const gain2 = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-
-                        osc1.type = 'sawtooth';
-                        osc1.frequency.setValueAtTime((150 + Math.random() * 100) * freqScale, now);
-                        osc1.frequency.exponentialRampToValueAtTime(Math.max(20, 50 * freqScale), now + duration * 0.7);
-
-                        osc2.type = 'sine';
-                        osc2.frequency.setValueAtTime((400 + Math.random() * 200) * freqScale, now);
-                        osc2.frequency.exponentialRampToValueAtTime(Math.max(30, 150 * freqScale), now + duration * 0.6);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            const envelope = Math.exp(-i / (noiseLen * 0.25));
-                            data[i] = (Math.random() * 2 - 1) * envelope;
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-
-                        gain1.gain.setValueAtTime(0.6 * intensity, now);
-                        gain1.gain.exponentialRampToValueAtTime(0.12, now + duration * 0.7);
-                        gain1.gain.exponentialRampToValueAtTime(0.03, now + duration);
-
-                        gain2.gain.setValueAtTime(0.5 * intensity, now);
-                        gain2.gain.exponentialRampToValueAtTime(0.08, now + duration * 0.6);
-                        gain2.gain.exponentialRampToValueAtTime(0.03, now + duration);
-
-                        noiseGain.gain.setValueAtTime(0.75 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.3);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
-
-                        osc1.connect(gain1);
-                        osc2.connect(gain2);
-                        noiseBuffer.connect(noiseGain);
-                        gain1.connect(mainGain);
-                        gain2.connect(mainGain);
-                        noiseGain.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc1.start(now);
-                        osc1.stop(now + duration);
-                        osc2.start(now);
-                        osc2.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-
-                    } else if (variant === 4) {
-                        // RUMBLING CASCADE - Multiple frequency layers, complex texture
-                        const osc1 = ctx.createOscillator();
-                        const osc2 = ctx.createOscillator();
-                        const osc3 = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const g1 = ctx.createGain();
-                        const g2 = ctx.createGain();
-                        const g3 = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-
-                        osc1.type = 'sine';
-                        osc1.frequency.setValueAtTime((80 + Math.random() * 40) * freqScale, now);
-                        osc1.frequency.exponentialRampToValueAtTime(Math.max(15, 38 * freqScale), now + duration * 0.8);
-
-                        osc2.type = 'triangle';
-                        osc2.frequency.setValueAtTime((180 + Math.random() * 100) * freqScale, now);
-                        osc2.frequency.exponentialRampToValueAtTime(Math.max(20, 60 * freqScale), now + duration * 0.7);
-
-                        osc3.type = 'sawtooth';
-                        osc3.frequency.setValueAtTime((350 + Math.random() * 150) * freqScale, now);
-                        osc3.frequency.exponentialRampToValueAtTime(Math.max(30, 100 * freqScale), now + duration * 0.6);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            const env = Math.exp(-i / (noiseLen * 0.35));
-                            data[i] = (Math.random() * 2 - 1) * env;
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-
-                        g1.gain.setValueAtTime(0.6 * intensity, now);
-                        g1.gain.exponentialRampToValueAtTime(0.16, now + duration);
-
-                        g2.gain.setValueAtTime(0.55 * intensity, now);
-                        g2.gain.exponentialRampToValueAtTime(0.14, now + duration);
-
-                        g3.gain.setValueAtTime(0.5 * intensity, now);
-                        g3.gain.exponentialRampToValueAtTime(0.12, now + duration);
-
-                        noiseGain.gain.setValueAtTime(0.8 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.4);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
-
-                        osc1.connect(g1);
-                        osc2.connect(g2);
-                        osc3.connect(g3);
-                        noiseBuffer.connect(noiseGain);
-                        g1.connect(mainGain);
-                        g2.connect(mainGain);
-                        g3.connect(mainGain);
-                        noiseGain.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc1.start(now);
-                        osc1.stop(now + duration);
-                        osc2.start(now);
-                        osc2.stop(now + duration);
-                        osc3.start(now);
-                        osc3.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-
-                    } else if (variant === 5) {
-                        // EARTHY RUMBLE - Deep low-frequency rumble with earthy character
-                        const osc1 = ctx.createOscillator();
-                        const osc2 = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const g1 = ctx.createGain();
-                        const g2 = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-                        const filter = ctx.createBiquadFilter();
-
-                        osc1.type = 'sine';
-                        osc1.frequency.setValueAtTime((55 + Math.random() * 25) * freqScale, now);
-                        osc1.frequency.exponentialRampToValueAtTime(Math.max(12, 30 * freqScale), now + duration * 0.8);
-
-                        osc2.type = 'sine';
-                        osc2.frequency.setValueAtTime((90 + Math.random() * 50) * freqScale, now);
-                        osc2.frequency.exponentialRampToValueAtTime(Math.max(15, 45 * freqScale), now + duration * 0.8);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseLen * (0.2 + dcyK * 0.6)));
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-
-                        g1.gain.setValueAtTime(0.7 * intensity, now);
-                        g1.gain.exponentialRampToValueAtTime(0.15, now + duration * 0.8);
-                        g1.gain.exponentialRampToValueAtTime(0.02, now + duration);
-
-                        g2.gain.setValueAtTime(0.5 * intensity, now);
-                        g2.gain.exponentialRampToValueAtTime(0.1, now + duration * 0.7);
-                        g2.gain.exponentialRampToValueAtTime(0.01, now + duration);
-
-                        noiseGain.gain.setValueAtTime(0.4 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.08, now + duration * 0.6);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
-
-                        filter.type = 'lowpass';
-                        filter.frequency.setValueAtTime(250, now);
-                        filter.frequency.linearRampToValueAtTime(100, now + duration);
-
-                        osc1.connect(g1);
-                        osc2.connect(g2);
-                        noiseBuffer.connect(noiseGain);
-                        g1.connect(filter);
-                        g2.connect(filter);
-                        noiseGain.connect(filter);
-                        filter.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc1.start(now);
-                        osc1.stop(now + duration);
-                        osc2.start(now);
-                        osc2.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-
-                    } else if (variant === 6) {
-                        // BRIGHT CRACKLE - Lots of high-frequency noise and harmonics
-                        const osc = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const oscGain = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-                        const filter = ctx.createBiquadFilter();
-
-                        osc.type = 'square';
-                        osc.frequency.setValueAtTime((600 + Math.random() * 300) * freqScale, now);
-                        osc.frequency.exponentialRampToValueAtTime(Math.max(30, 200 * freqScale), now + duration * 0.5);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.pow(Math.exp(-i / (noiseLen * 0.25)), 0.8);
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-
-                        oscGain.gain.setValueAtTime(0.5 * intensity, now);
-                        oscGain.gain.exponentialRampToValueAtTime(0.15, now + duration * 0.4);
-                        oscGain.gain.exponentialRampToValueAtTime(0.02, now + duration);
-
-                        noiseGain.gain.setValueAtTime(0.85 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.2, now + duration * 0.4);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.04, now + duration);
-
-                        filter.type = 'highpass';
-                        filter.frequency.setValueAtTime(500, now);
-                        filter.frequency.exponentialRampToValueAtTime(1000, now + duration);
-
-                        osc.connect(oscGain);
-                        noiseBuffer.connect(noiseGain);
-                        oscGain.connect(filter);
-                        noiseGain.connect(filter);
-                        filter.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc.start(now);
-                        osc.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-
-                    } else {
-                        // DEEP WHOMP - Single low frequency with fast initial decay
-                        const osc = ctx.createOscillator();
-                        const noiseBuffer = ctx.createBufferSource();
-                        const oscGain = ctx.createGain();
-                        const noiseGain = ctx.createGain();
-                        const mainGain = ctx.createGain();
-                        const filter = ctx.createBiquadFilter();
-
-                        osc.type = 'sine';
-                        osc.frequency.setValueAtTime((65 + Math.random() * 35) * freqScale, now);
-                        osc.frequency.exponentialRampToValueAtTime(Math.max(12, 38 * freqScale), now + duration * 0.3);
-                        osc.frequency.exponentialRampToValueAtTime(Math.max(8, 22 * freqScale), now + duration);
-
-                        const noiseLen = ctx.sampleRate * duration;
-                        const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-                        const data = noiseBuf.getChannelData(0);
-                        for (let i = 0; i < noiseLen; i++) {
-                            data[i] = (Math.random() * 2 - 1) * Math.pow(Math.exp(-i / (noiseLen * 0.2)), 1.5);
-                        }
-                        noiseBuffer.buffer = noiseBuf;
-
-                        oscGain.gain.setValueAtTime(0.85 * intensity, now);
-                        oscGain.gain.exponentialRampToValueAtTime(0.1, now + duration * 0.3);
-                        oscGain.gain.exponentialRampToValueAtTime(0.01, now + duration);
-
-                        noiseGain.gain.setValueAtTime(0.6 * intensity * noiseWt, now);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.05, now + duration * 0.2);
-                        noiseGain.gain.exponentialRampToValueAtTime(0.01, now + duration);
-
-                        filter.type = 'lowpass';
-                        filter.frequency.setValueAtTime(150, now);
-                        filter.frequency.linearRampToValueAtTime(80, now + duration);
-
-                        osc.connect(oscGain);
-                        noiseBuffer.connect(noiseGain);
-                        oscGain.connect(filter);
-                        noiseGain.connect(filter);
-                        filter.connect(mainGain);
-                        mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-
-                        mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
-                        osc.start(now);
-                        osc.stop(now + duration);
-                        noiseBuffer.start(now);
-                        noiseBuffer.stop(now + duration);
-                    }
+                    const samples = this._buildExplosionSamples(ctx, config, intensity, freqScale, dcyK);
+                    const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate);
+                    buffer.getChannelData(0).set(samples);
+                    const src = ctx.createBufferSource();
+                    src.buffer = buffer;
+                    const mainGain = ctx.createGain();
+                    mainGain.gain.setValueAtTime(normalizeGain(intensity), now);
+                    src.connect(mainGain);
+                    mainGain.connect(getSfxOutputNode(ctx) || ctx.destination);
+                    src.start(now);
 
                     // Optional ring layer — a resonant ping at pitch * 1.8 that decays quickly
                     if (config.hasRingLayer) {
@@ -33355,26 +33329,11 @@
                     }
 
                     // ── SUB-TYPE ADDITIVE LAYERS ──
-                    const bassWt    = Math.max(0, Math.min(1, config.bassWeight  != null ? config.bassWeight  : 0.52));
+                    // (bassWeight's old job — extra sub-bass for heavy explosions — is now
+                    // handled by the depth-driven "low whump"/"soft sub" in the core body above)
                     const isMetalRing = config.metalRing  || false;
                     const clusterN  = config.clusterPops  || 0;
                     const voidWarp  = config.voidWarp     || false;
-
-                    // Deep bass sub-oscillator for heavy explosions (bomb / boss / void)
-                    if (bassWt > 0.55) {
-                        const bassOsc  = ctx.createOscillator();
-                        const bassGain = ctx.createGain();
-                        bassOsc.type = 'sine';
-                        const bassFreq = Math.max(18, 48 * (1.5 - bassWt));
-                        bassOsc.frequency.setValueAtTime(bassFreq, now);
-                        bassOsc.frequency.exponentialRampToValueAtTime(Math.max(10, bassFreq * 0.5), now + duration * 0.75);
-                        bassGain.gain.setValueAtTime((bassWt - 0.45) * 0.8 * intensity, now);
-                        bassGain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.85);
-                        bassOsc.connect(bassGain);
-                        bassGain.connect(getSfxOutputNode(ctx) || ctx.destination);
-                        bassOsc.start(now);
-                        bassOsc.stop(now + duration * 0.85);
-                    }
 
                     // Metallic ring transients for metal ship explosions
                     if (isMetalRing) {
@@ -34839,9 +34798,11 @@
                     const varTabBtn = panel.querySelector('#variationsTab');
                     const libTabBtn = panel.querySelector('#libraryTab');
                     const unasgnTabBtn = panel.querySelector('#unassignedTab');
+                    const demosTabBtn = panel.querySelector('#demosTab');
                     if (varTabBtn) varTabBtn.onclick = () => this.switchTab('variations');
                     if (libTabBtn) libTabBtn.onclick = () => this.switchTab('library');
                     if (unasgnTabBtn) unasgnTabBtn.onclick = () => this.switchTab('unassigned');
+                    if (demosTabBtn) demosTabBtn.onclick = () => this.switchTab('demos');
                 },
 
                 handleAction(action, index) {
@@ -34860,6 +34821,11 @@
                         const newVar = this.generateVariations(cat, 1)[0];
                         this.variations[index] = newVar;
                         this.categoryVariations[cat] = this.variations;
+                        // This slot is already the live gameplay sound (regenerating any
+                        // other slot has no effect on gameplay until it's explicitly kept) —
+                        // push the fresh regeneration live too, or the game would keep
+                        // playing the version that was live before this regenerate.
+                        if (this.preferences[cat].approved === index) this.applySoundOverride(cat, newVar);
                         // Auto-play so you can hear it immediately
                         setTimeout(() => this.playVariation(index), 30);
                         this.updatePanel();
@@ -34982,6 +34948,45 @@
                     });
                 },
 
+                // v59.9: Toolkit Demos tab — plays the preview WAVs generated by the
+                // generate_sfx.js diversity pass straight from disk (not through
+                // sfxList/game.sfxElements, since these aren't gameplay sounds).
+                updateDemosView() {
+                    const panel = document.getElementById('soundTestingPanel');
+                    if (!panel) return;
+
+                    const container = panel.querySelector('#demosContent');
+                    if (!container) return;
+
+                    let html = `<div style="padding: 8px;">
+                        <div style="font-size:10px; color:#666; margin-bottom:10px;">
+                            Previews of the new synthesis primitives in tools/generate_sfx.js.
+                            Not gameplay sounds — safe to ignore/delete assets/sfx/_toolkit_demos/.
+                        </div>`;
+
+                    this.toolkitDemos.forEach((demo) => {
+                        html += `<div style="margin: 6px 0; padding: 7px 8px; background: rgba(60,80,120,0.25); border-left: 3px solid #48a; border-radius: 2px;">
+                            <div style="color: #7af; font-weight: bold; font-size: 11px; margin-bottom: 2px;">${demo.label}</div>
+                            <div style="color: #666; font-size: 9px; margin-bottom: 5px;">${demo.desc}</div>
+                            <button class="demo-play" data-demo="${demo.name}" style="padding:3px 7px; font-size:10px; background:rgba(74,144,226,0.4); border:1px solid #4a90e2; color:#fff; cursor:pointer; border-radius:2px;">▶ Play</button>
+                        </div>`;
+                    });
+
+                    html += '</div>';
+                    container.innerHTML = html;
+
+                    panel.querySelectorAll('.demo-play').forEach(btn => {
+                        btn.onclick = (e) => {
+                            e.preventDefault();
+                            const name = btn.getAttribute('data-demo');
+                            try {
+                                const audio = new Audio('assets/sfx/_toolkit_demos/' + name + '.wav');
+                                audio.play().catch(() => this.showToast('Demo file not found — run node tools/generate_sfx.js'));
+                            } catch (e) {}
+                        };
+                    });
+                },
+
                 // ── KEEP: assign generated sound to game, displace old to _u# pool ──
                 performKeep(cat, index) {
                     const v = this.variations[index];
@@ -34991,14 +34996,16 @@
 
                     // If there was a different previously approved variation, save it to pool
                     let displacedId = null;
+                    let prevApprovedConfig = null;
                     if (prefs.approved !== null && prefs.approved !== index) {
                         const oldV = this.variations[prefs.approved];
                         if (oldV) {
+                            prevApprovedConfig = JSON.parse(JSON.stringify(oldV));
                             const num = this.nextUnassignedNum++;
                             displacedId = `${cat}_u${num}`;
                             this.reservedSounds[displacedId] = {
                                 backupOf: cat,
-                                generatedParams: JSON.parse(JSON.stringify(oldV)),
+                                generatedParams: prevApprovedConfig,
                                 empty: false,
                                 label: `${cat}_u${num}`,
                                 unassignedNum: num
@@ -35012,12 +35019,14 @@
                         cat,
                         keptIndex: index,
                         prevApprovedIndex: prefs.approved,
+                        prevApprovedConfig,
                         displacedId
                     });
                     if (this.undoStack.length > 30) this.undoStack.shift();
 
                     // Mark this slot as the approved game sound
                     prefs.approved = index;
+                    this.applySoundOverride(cat, v);
 
                     this.savePreferences();
                     this.saveReservedSounds();
@@ -35043,7 +35052,10 @@
 
                     if (!confirm(msg)) return;
 
-                    if (isAssigned) prefs.approved = null;
+                    if (isAssigned) {
+                        prefs.approved = null;
+                        this.restoreFactorySound(cat);
+                    }
                     this.variations[index] = null;
                     this.categoryVariations[cat] = this.variations;
 
@@ -35068,32 +35080,56 @@
                     const prefs = this.preferences[cat];
                     const vars = this.categoryVariations[cat];
 
+                    // Snapshot what's approved *before* this action touches anything, so
+                    // Undo has an unambiguous target to restore regardless of which slot
+                    // ends up overwritten below.
+                    const prevApprovedIndex = prefs.approved;
+                    const prevApprovedConfig = (prevApprovedIndex !== null && vars[prevApprovedIndex])
+                        ? JSON.parse(JSON.stringify(vars[prevApprovedIndex]))
+                        : null;
+
                     // Find first empty slot, otherwise use slot 0
                     let targetSlot = vars.findIndex(v => v === null);
                     if (targetSlot === -1) targetSlot = 0;
 
                     // If overwriting an occupied slot (approved or not), displace its sound
                     // to the pool first so nothing is silently lost when all 5 slots are full
+                    let displacedId = null;
                     if (vars[targetSlot]) {
                         const num = this.nextUnassignedNum++;
-                        const displaceId = `${cat}_u${num}`;
-                        this.reservedSounds[displaceId] = {
+                        displacedId = `${cat}_u${num}`;
+                        this.reservedSounds[displacedId] = {
                             backupOf: cat,
                             generatedParams: JSON.parse(JSON.stringify(vars[targetSlot])),
                             empty: false,
-                            label: displaceId,
+                            label: displacedId,
                             unassignedNum: num
                         };
-                        this.unassignedSounds.push(displaceId);
+                        this.unassignedSounds.push(displacedId);
                     }
+                    // Undo should only auto-remove this pool copy if the target slot we
+                    // landed on happened to be the previously-approved one (so this pool
+                    // entry duplicates prevApprovedConfig). Otherwise it's an unrelated,
+                    // independent sound Undo must leave alone.
+                    const undoDisplacedId = (targetSlot === prevApprovedIndex) ? displacedId : null;
 
                     // Place the pool sound into the slot and mark as approved
                     vars[targetSlot] = JSON.parse(JSON.stringify(reserved.generatedParams));
                     prefs.approved = targetSlot;
+                    this.applySoundOverride(cat, vars[targetSlot]);
 
                     // Remove from pool
                     delete this.reservedSounds[soundId];
                     this.unassignedSounds = this.unassignedSounds.filter(s => s !== soundId);
+
+                    this.undoStack.push({
+                        cat,
+                        keptIndex: targetSlot,
+                        prevApprovedIndex,
+                        prevApprovedConfig,
+                        displacedId: undoDisplacedId
+                    });
+                    if (this.undoStack.length > 30) this.undoStack.shift();
 
                     this.savePreferences();
                     this.saveReservedSounds();
@@ -35110,7 +35146,7 @@
                         return;
                     }
                     const last = this.undoStack.pop();
-                    const { cat, keptIndex, prevApprovedIndex, displacedId } = last;
+                    const { cat, keptIndex, prevApprovedIndex, prevApprovedConfig, displacedId } = last;
 
                     const prefs = this.preferences[cat];
 
@@ -35130,7 +35166,27 @@
                     }
 
                     // Restore previous approved
-                    if (prefs) prefs.approved = (prevApprovedIndex !== undefined && prevApprovedIndex !== null) ? prevApprovedIndex : null;
+                    const restoredIndex = (prevApprovedIndex !== undefined && prevApprovedIndex !== null) ? prevApprovedIndex : null;
+                    if (prefs) prefs.approved = restoredIndex;
+
+                    // Restore the slot's own content from the snapshot taken when this
+                    // action was performed — not just re-read categoryVariations by index.
+                    // Some actions (assign-from-pool / cross-assign, when the target slot
+                    // they land on happens to be the same index that was approved before)
+                    // overwrite that slot in place, so re-deriving "what was approved" from
+                    // categoryVariations[cat][restoredIndex] after the fact would return the
+                    // sound we're trying to undo, not the one it replaced.
+                    if (restoredIndex !== null && prevApprovedConfig) {
+                        if (!this.categoryVariations[cat]) this.categoryVariations[cat] = new Array(5).fill(null);
+                        this.categoryVariations[cat][restoredIndex] = prevApprovedConfig;
+                    }
+
+                    // Push the live gameplay sound back to whatever was approved before —
+                    // the tracked variation if one exists, otherwise the untouched
+                    // factory sound (true the first time a category is ever customized,
+                    // since there was nothing generated to track back then).
+                    if (prevApprovedConfig) this.applySoundOverride(cat, prevApprovedConfig);
+                    else this.restoreFactorySound(cat);
 
                     // Remove the displaced-A copy (was added when we kept B); A is assigned again so it's redundant
                     if (displacedId) {
@@ -35144,7 +35200,9 @@
                     if (soundMixer) soundMixer.renderStrips();
                     this.showToast(last.isCrossAssign
                         ? `↶ Undone — cross-assign to ${last.cat} reversed; copy sent to pool`
-                        : '↶ Undone — previous assignment restored, sound sent to pool');
+                        : (prevApprovedConfig
+                            ? '↶ Undone — previous assignment restored, sound sent to pool'
+                            : '↶ Undone — restored original factory sound, sound sent to pool'));
                 },
 
                 // ── CROSS-ASSIGN PICKER: show a category picker inside the variations panel ──
@@ -35208,14 +35266,16 @@
 
                     // Displace current approved in target category to pool
                     let displacedId = null;
+                    let prevApprovedConfig = null;
                     if (prevTargetApproved !== null) {
                         const oldV = targetVars[prevTargetApproved];
                         if (oldV) {
+                            prevApprovedConfig = JSON.parse(JSON.stringify(oldV));
                             const num = this.nextUnassignedNum++;
                             displacedId = `${targetCat}_u${num}`;
                             this.reservedSounds[displacedId] = {
                                 backupOf: targetCat,
-                                generatedParams: JSON.parse(JSON.stringify(oldV)),
+                                generatedParams: prevApprovedConfig,
                                 empty: false,
                                 label: displacedId,
                                 unassignedNum: num
@@ -35233,11 +35293,13 @@
                     soundCopy.slotIndex = targetSlot;
                     targetVars[targetSlot]   = soundCopy;
                     targetPrefs.approved     = targetSlot;
+                    this.applySoundOverride(targetCat, soundCopy);
 
                     this.undoStack.push({
                         cat: targetCat,
                         keptIndex: targetSlot,
                         prevApprovedIndex: prevTargetApproved,
+                        prevApprovedConfig,
                         displacedId,
                         isCrossAssign: true,
                         sourceCat,
@@ -35265,16 +35327,147 @@
                             });
                             return;
                         }
-                        if (config.type === 'explosion')  this.playExplosionVariation(ctx, config);
-                        else if (config.type === 'laser') this.playLaserVariation(ctx, config);
-                        else if (config.type === 'bullet') this.playBulletVariation(ctx, config);
-                        else if (config.type === 'collision') this.playCollisionVariation(ctx, config);
-                        else if (config.type === 'powerup') this.playPowerupVariation(ctx, config);
-                        else if (config.type === 'flame') this.playFlameVariation(ctx, config);
-                        else if (config.type === 'special') this.playSpecialVariation(ctx, config);
-                        else if (config.type === 'asteroid') this.playAsteroidVariation(ctx, config);
-                        else this.playGenericVariation(ctx, config);
+                        this.renderVariationGraph(ctx, config);
                     } catch (e) { console.error('Error playing config:', e); }
+                },
+
+                // Builds the synthesis graph for `config` against any AudioContext —
+                // the live context (for preview/preview-through-speakers) or an
+                // OfflineAudioContext (for baking a config into a real buffer).
+                renderVariationGraph(ctx, config) {
+                    if (config.type === 'explosion')  this.playExplosionVariation(ctx, config);
+                    else if (config.type === 'laser') this.playLaserVariation(ctx, config);
+                    else if (config.type === 'bullet') this.playBulletVariation(ctx, config);
+                    else if (config.type === 'collision') this.playCollisionVariation(ctx, config);
+                    else if (config.type === 'powerup') this.playPowerupVariation(ctx, config);
+                    else if (config.type === 'flame') this.playFlameVariation(ctx, config);
+                    else if (config.type === 'special') this.playSpecialVariation(ctx, config);
+                    else if (config.type === 'asteroid') this.playAsteroidVariation(ctx, config);
+                    else this.playGenericVariation(ctx, config);
+                },
+
+                // ── RENDER TO BUFFER: bake a config into a real AudioBuffer via an
+                // OfflineAudioContext, so it can become an actual gameplay sound
+                // instead of only being audible through the live preview context ──
+                renderConfigToBuffer(config) {
+                    return new Promise((resolve, reject) => {
+                        if (!config) { reject(new Error('No config to render')); return; }
+                        const sampleRate = 44100;
+                        const baseDur = config.duration || 1.2;
+                        // Sequential (non-chord) note sequences can run longer than
+                        // `duration` alone would suggest — pad for their full span.
+                        const noteTail = (config.numNotes && config.spacing && !config.chordMode)
+                            ? (config.numNotes - 1) * config.spacing : 0;
+                        const totalDur = Math.min(8, Math.max(baseDur, noteTail + baseDur * 0.7) + 0.6);
+                        let offlineCtx;
+                        try {
+                            offlineCtx = new OfflineAudioContext(1, Math.ceil(sampleRate * totalDur), sampleRate);
+                        } catch (e) { reject(e); return; }
+                        try {
+                            this.renderVariationGraph(offlineCtx, config);
+                        } catch (e) { reject(e); return; }
+                        offlineCtx.startRendering().then(resolve).catch(reject);
+                    });
+                },
+
+                // Encodes a mono AudioBuffer as a 16-bit PCM WAV Blob.
+                audioBufferToWavBlob(buffer) {
+                    const samples = buffer.getChannelData(0);
+                    const dataSize = samples.length * 2;
+                    const arr = new ArrayBuffer(44 + dataSize);
+                    const view = new DataView(arr);
+                    const writeStr = (offset, str) => {
+                        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+                    };
+                    writeStr(0, 'RIFF');
+                    view.setUint32(4, 36 + dataSize, true);
+                    writeStr(8, 'WAVE');
+                    writeStr(12, 'fmt ');
+                    view.setUint32(16, 16, true);
+                    view.setUint16(20, 1, true); // PCM
+                    view.setUint16(22, 1, true); // mono
+                    view.setUint32(24, buffer.sampleRate, true);
+                    view.setUint32(28, buffer.sampleRate * 2, true); // byte rate
+                    view.setUint16(32, 2, true); // block align
+                    view.setUint16(34, 16, true); // bits per sample
+                    writeStr(36, 'data');
+                    view.setUint32(40, dataSize, true);
+                    let offset = 44;
+                    for (let i = 0; i < samples.length; i++) {
+                        const s = Math.max(-1, Math.min(1, samples[i]));
+                        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                        offset += 2;
+                    }
+                    return new Blob([arr], { type: 'audio/wav' });
+                },
+
+                // ── LIVE AUDIO BRIDGE ──
+                // Bakes `config` and swaps it into game.sfxElements[cat]/sfxBuffers[cat] —
+                // the exact tables playSound/playSoundPooled/playSoundBuffer read from —
+                // so the assigned sound is heard in real gameplay immediately, no reload
+                // needed. Also drops any already-built sfxPool for `cat` so the next play
+                // rebuilds its clone pool from the new element instead of the stale one.
+                async applySoundOverride(cat, config) {
+                    if (!cat || !config) return false;
+                    try {
+                        const buffer = await this.renderConfigToBuffer(config);
+                        game.sfxBuffers[cat] = buffer;
+                        // A file:// page has a null origin, and Chromium refuses to let
+                        // <audio> load a blob: URL minted from a null-origin document
+                        // ("Not allowed to load local resource"). Harmless to skip there:
+                        // playSfxVariant always tries the WebAudio buffer (set above)
+                        // before falling back to the pooled element, so file:// sessions
+                        // (this game's actual runtime) hear the override either way —
+                        // only build the element when it could actually load (http/https).
+                        if (location.protocol !== 'file:') {
+                            const blob = this.audioBufferToWavBlob(buffer);
+                            const url = URL.createObjectURL(blob);
+                            if (!game.sfxOverrideUrls) game.sfxOverrideUrls = {};
+                            if (game.sfxOverrideUrls[cat]) URL.revokeObjectURL(game.sfxOverrideUrls[cat]);
+                            game.sfxOverrideUrls[cat] = url;
+                            const el = new Audio(url);
+                            el.preload = 'auto';
+                            try { el.load(); } catch (e) {}
+                            game.sfxElements[cat] = el;
+                        }
+                        if (game.sfxPools) delete game.sfxPools[cat];
+                        return true;
+                    } catch (e) {
+                        console.warn('Could not apply live sound override for', cat, e);
+                        this.showToast('⚠ Could not apply sound to the live game');
+                        return false;
+                    }
+                },
+
+                // Reverts `cat` back to its original factory-loaded sound (used by Undo
+                // and by anything that clears a category's approved slot).
+                restoreFactorySound(cat) {
+                    if (!cat) return;
+                    if (game.sfxFactoryElements && game.sfxFactoryElements[cat]) {
+                        game.sfxElements[cat] = game.sfxFactoryElements[cat];
+                    }
+                    if (game.sfxFactoryBuffers && game.sfxFactoryBuffers[cat] !== undefined) {
+                        game.sfxBuffers[cat] = game.sfxFactoryBuffers[cat];
+                    } else {
+                        delete game.sfxBuffers[cat];
+                    }
+                    if (game.sfxPools) delete game.sfxPools[cat];
+                    if (game.sfxOverrideUrls && game.sfxOverrideUrls[cat]) {
+                        URL.revokeObjectURL(game.sfxOverrideUrls[cat]);
+                        delete game.sfxOverrideUrls[cat];
+                    }
+                },
+
+                // Called once at startup (after loadAllAudio has built the factory
+                // defaults) so overrides assigned in a previous session are restored
+                // to the live game without needing to redo them by hand.
+                applyAllApprovedSoundsToGame() {
+                    for (const cat of Object.keys(this.preferences)) {
+                        const prefs = this.preferences[cat];
+                        if (!prefs || prefs.approved === null || prefs.approved === undefined) continue;
+                        const config = (this.categoryVariations[cat] || [])[prefs.approved];
+                        if (config) this.applySoundOverride(cat, config);
+                    }
                 },
 
                 // ── DELETE LIBRARY SOUND: removes from pool / marks unassigned slot empty ──
@@ -35294,6 +35487,7 @@
                             const v = (this.categoryVariations[cat] || [])[prefs.approved];
                             if (v && v.label === soundName) {
                                 prefs.approved = null;
+                                this.restoreFactorySound(cat);
                                 this.savePreferences();
                             }
                         }
@@ -35588,6 +35782,12 @@
                     scrollContainer.appendChild(unusedSection);
                 },
 
+                // Orange for boosted (101-200%) so it's visually obvious a sound has
+                // been pushed above its normal level; default blue otherwise.
+                volumeColor(vol) {
+                    return vol > 100 ? '#ff9944' : '#adf';
+                },
+
                 createMixerStrip(soundName) {
                     const strip = document.createElement('div');
                     strip.className = 'mixer-strip';
@@ -35603,9 +35803,9 @@
                             <button class="mixer-strip-button mixer-play" data-sound="${soundName}" style="flex: 1;">▶</button>
                         </div>
                         <div class="mixer-strip-slider-container">
-                            <input type="range" min="0" max="150" value="${currentVolume}"
+                            <input type="range" min="0" max="200" value="${currentVolume}"
                                    class="mixer-strip-slider" data-sound="${soundName}">
-                            <div class="mixer-strip-volume-display">${currentVolume}%</div>
+                            <div class="mixer-strip-volume-display" style="color: ${this.volumeColor(currentVolume)};">${currentVolume}%</div>
                         </div>
                         <div class="mixer-strip-assignment" data-sound="${soundName}">
                             ${this.soundAssignments[soundName] || 'Unassigned'}
@@ -35617,7 +35817,7 @@
                                 `<button class="mixer-strip-button mixer-save" data-sound="${soundName}">Save</button>`
                             }
                             <button class="mixer-strip-button mixer-assign" data-sound="${soundName}">Assign</button>
-                            ${soundTestingTool && soundTestingTool.soundBackups[soundName] ?
+                            ${soundTestingTool && soundTestingTool.preferences[soundName] && soundTestingTool.preferences[soundName].approved !== null ?
                                 `<button class="mixer-strip-button mixer-revert" data-sound="${soundName}">↶ Revert</button>` :
                                 ''
                             }
@@ -35643,17 +35843,22 @@
                         const vol = parseInt(e.target.value);
                         volumes[soundName] = vol;
                         display.textContent = `${vol}%`;
+                        display.style.color = this.volumeColor(vol);
 
                         // Apply volume change if in game mode
                         if (this.currentMode === 'game') {
                             this.applyGameVolume(soundName, vol);
                         }
 
-                        // Play sound at current volume for real-time feedback
+                        // Play sound at current volume for real-time feedback, and (game
+                        // mode only) persist the slider position — without this, a plain
+                        // drag never survives a page reload/quit even though it already
+                        // sounds right in the current session (gameVolumes is mutated live).
                         if (sliderTimeout) clearTimeout(sliderTimeout);
                         sliderTimeout = setTimeout(() => {
                             this.playSound(soundName);
-                        }, 200); // Wait 200ms after last slider movement to play
+                            if (this.currentMode === 'game') this.savePreferences();
+                        }, 200); // Wait 200ms after last slider movement
                     });
 
                     // Reset button
@@ -35664,6 +35869,7 @@
                             volumes[soundName] = 100;
                             slider.value = 100;
                             display.textContent = '100%';
+                            display.style.color = this.volumeColor(100);
                             this.savedIndividualSounds.delete(soundName);
                             const savedEl = strip.querySelector('.mixer-strip-saved');
                             if (savedEl) savedEl.textContent = '';
@@ -35738,12 +35944,30 @@
                 },
 
                 playSound(soundName) {
-                    // Play the sound with current mixer volume
+                    // Play at the current mixer slider's volume. baseVolume (the arg every
+                    // playback path multiplies by the mixer's own stored multiplier) is
+                    // always clamped to <=1 by design — it represents a sound's fixed,
+                    // designer-set level, not the boost. So the slider's 0-200% has to be
+                    // fed in through game.volumeMultipliers (the one uncapped factor,
+                    // read by getMixerVolumeMultiplier), never as baseVolume directly, or
+                    // it gets silently clamped AND (in game mode) double-applied on top of
+                    // the multiplier applyGameVolume() already keeps live-synced.
+                    if (!game.volumeMultipliers) game.volumeMultipliers = {};
                     const volumes = this.currentMode === 'preview' ? this.previewVolumes : this.gameVolumes;
-                    const volume = (volumes[soundName] || 100) / 100;
+                    const vol = volumes[soundName] || 100;
 
-                    if (playSfxVariant) {
-                        playSfxVariant(soundName, Math.min(1, volume), 0.05, 0.05);
+                    if (this.currentMode === 'preview') {
+                        // Preview mode never touches game.volumeMultipliers elsewhere, so
+                        // push this slider's value in just for the one shot, then restore
+                        // whatever the real gameplay multiplier was — auditioning a sound
+                        // here must not leak into actual gameplay loudness.
+                        const prev = game.volumeMultipliers[soundName];
+                        game.volumeMultipliers[soundName] = vol / 100;
+                        if (playSfxVariant) playSfxVariant(soundName, 1, 0.05, 0.05);
+                        if (prev === undefined) delete game.volumeMultipliers[soundName];
+                        else game.volumeMultipliers[soundName] = prev;
+                    } else {
+                        if (playSfxVariant) playSfxVariant(soundName, 1, 0.05, 0.05);
                     }
                 },
 
@@ -35878,21 +36102,14 @@
                 },
 
                 applyGameVolume(soundName, volume) {
-                    // Apply volume multiplier to game audio
-                    // This is called when in game mode and volume changes
+                    // Store the mixer's multiplier for this sound — every playback path
+                    // (playSoundPooled/playSound/playSoundBuffer) reads it through
+                    // getMixerVolumeMultiplier() and multiplies it against that call's own
+                    // baseVolume at the moment the sound actually plays. Values above 1
+                    // (>100%) genuinely boost now via applyBoostedVolume()'s WebAudio
+                    // GainNode tap — HTMLMediaElement.volume itself is still capped at 1
+                    // by spec, so we don't touch game.sfxElements[...].volume directly here.
                     const multiplier = volume / 100;
-
-                    // If we have game.sfxElements, we can apply the multiplier
-                    if (game && game.sfxElements && game.sfxElements[soundName]) {
-                        const audioEl = game.sfxElements[soundName];
-                        // Store base volume on first access
-                        if (!audioEl._baseVolume) {
-                            audioEl._baseVolume = audioEl.volume || 0.5;
-                        }
-                        audioEl.volume = audioEl._baseVolume * multiplier;
-                    }
-
-                    // Store volume multiplier for future playback
                     if (!game.volumeMultipliers) game.volumeMultipliers = {};
                     game.volumeMultipliers[soundName] = multiplier;
                 },
@@ -35908,21 +36125,20 @@
                     }
                 },
 
+                // Jumps to the Sound Tester on this sound's own category so the user can
+                // actually customize it through the real generate/keep flow. Used to be a
+                // prompt() placeholder that stored a free-text label over this strip's
+                // real "used by" description (populated from soundTestingTool.soundUsage
+                // in populateSoundAssignments) without changing anything about the sound.
                 showAssignmentDialog(soundName) {
-                    // Placeholder for assignment dialog
-                    // Future implementation: allow user to select what this sound is assigned to
-                    const currentAssignment = this.soundAssignments[soundName] || 'Unassigned';
-                    const newAssignment = prompt(`Assign sound:\n\nCurrent: ${currentAssignment}\n\nEnter new assignment (or leave blank for unassigned):`, currentAssignment);
-
-                    if (newAssignment !== null) {
-                        if (newAssignment === '') {
-                            this.soundAssignments[soundName] = 'Unassigned';
-                        } else {
-                            this.soundAssignments[soundName] = newAssignment;
-                        }
-                        this.savePreferences();
-                        this.renderStrips();
-                    }
+                    if (!soundTestingTool) return;
+                    if (!soundTestingTool.isOpen) soundTestingTool.toggle();
+                    soundTestingTool.switchTab('variations');
+                    soundTestingTool.selectCategory(soundName);
+                    const panel = document.getElementById('soundTestingPanel');
+                    const catList = panel ? panel.querySelector('#categorySelect') : null;
+                    if (catList) catList.value = soundName;
+                    this.showToast(`Opened "${soundName}" in the Sound Tester`);
                 },
 
                 // Architecture for future feature extensions

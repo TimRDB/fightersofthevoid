@@ -9,6 +9,14 @@
 //   Defender         — cleaner futuristic zaps: fast square sweeps, brighter filters
 //   Void Pure        — otherworldly: no hard transients, swishes, swells, emanations
 //   Void bullets     — energy (FM warble) vs. regular bullets (noise burst pews)
+//
+// v59.9 diversity pass: added a general-purpose toolkit extension (pink noise,
+// resonant state-variable filter, chorus/tremolo, foldback/bitcrush distortion,
+// PWM + detuned-unison oscillators, Karplus-Strong pluck, echo/stutter/morph,
+// plus 4 new composite builders) so every category above has more than the 4
+// existing class-signature templates to draw from. None of the 62 shipped
+// sounds were changed — see TOOLKIT DEMOS at the end of this file to preview
+// the additions; regenerate with `node tools/generate_sfx.js`.
 // ─────────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
@@ -58,6 +66,60 @@ function fmTone(sec, freq, ratio, index, amp) {
     return b;
 }
 
+// ── diversity pass (v59.9): new oscillator/noise/filter/effect primitives ──
+// These extend the toolkit beyond the original sin/saw/sq/tri + FM + white/brown
+// noise + one-pole filter set, so future sounds (in any category) aren't stuck
+// reusing the same handful of building blocks. Nothing below is wired into an
+// existing sfxList sound yet — see the TOOLKIT DEMOS block at the end of this
+// file to hear each one in isolation.
+
+// Pulse-width-modulated square: variable duty cycle gives a buzzier/thinner-to-
+// fatter spectrum than tone()'s fixed 50% square, and width can be swept over time.
+function pwm(sec, freq, width, amp) {
+    const b = buf(sec), f = fn(freq), w = fn(width), a = fn(amp);
+    let ph = 0;
+    for (let i = 0; i < b.length; i++) {
+        const t = i / SR;
+        ph += f(t) / SR;
+        const p = ph - Math.floor(ph);
+        b[i] = (p < Math.max(0.02, Math.min(0.98, w(t))) ? 1 : -1) * a(t);
+    }
+    return b;
+}
+
+// Dense detuned-unison stack (supersaw-style) — a reusable generalisation of the
+// hand-rolled "for (v=0;v<3;v++) mix(tone(...detune...))" loops used ad hoc in a
+// few existing sounds (e.g. Knight_Laser). Any voice count/spread/waveform now
+// available as one call instead of hand-written boilerplate.
+function detunedUnison(sec, freq, amp, wave = 'saw', voices = 5, spreadCents = 16) {
+    const b = buf(sec), f = fn(freq);
+    for (let v = 0; v < voices; v++) {
+        const centOffset = (v - (voices - 1) / 2) * (spreadCents / Math.max(1, voices - 1));
+        const ratio = Math.pow(2, centOffset / 1200);
+        mix(b, tone(sec, (t) => f(t) * ratio, amp, wave), 0, 1 / voices);
+    }
+    return b;
+}
+
+// Karplus-Strong plucked-string: a genuinely new timbral family (physical
+// modeling of a resonating string) next to the file's existing purely
+// subtractive/FM/noise sounds. `decay` close to 1 sustains longer (a taut,
+// ringing string); lower values die out fast (a muted thock).
+function pluck(freqHz, sec, decay = 0.996) {
+    const b = buf(sec);
+    const period = Math.max(2, Math.round(SR / freqHz));
+    const ring = new Float32Array(period);
+    for (let i = 0; i < period; i++) ring[i] = Math.random() * 2 - 1;
+    let idx = 0;
+    for (let i = 0; i < b.length; i++) {
+        b[i] = ring[idx];
+        const next = ring[(idx + 1) % period];
+        ring[idx] = ((ring[idx] + next) * 0.5) * decay;
+        idx = (idx + 1) % period;
+    }
+    return b;
+}
+
 function whiteNoise(sec, amp) {
     const b = buf(sec), a = fn(amp);
     for (let i = 0; i < b.length; i++) b[i] = (Math.random() * 2 - 1) * a(i / SR);
@@ -70,6 +132,23 @@ function brownNoise(sec, amp) {
     for (let i = 0; i < b.length; i++) {
         v = v * 0.985 + (Math.random() * 2 - 1) * 0.12;
         b[i] = v * 6 * a(i / SR);
+    }
+    return b;
+}
+
+// Pink (1/f) noise — warmer/airier than white, brighter and less rumbly than
+// brown. Sits between the two existing noise colors; good for organic wind/
+// hiss/atmosphere textures that don't need brown's dull thump or white's harshness.
+// (Paul Kellet's economy 3-pole approximation.)
+function pinkNoise(sec, amp) {
+    const b = buf(sec), a = fn(amp);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < b.length; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99765 * b0 + white * 0.0990460;
+        b1 = 0.96300 * b1 + white * 0.2965164;
+        b2 = 0.57000 * b2 + white * 1.0526913;
+        b[i] = (b0 + b1 + b2 + white * 0.1848) * 0.11 * a(i / SR);
     }
     return b;
 }
@@ -107,6 +186,26 @@ function bandpass(b, center, width = 0.5) {
     return b;
 }
 
+// Resonant state-variable filter (Chamberlin design) — unlike the one-pole
+// low/high/bandpass above, this has a genuine resonance peak: at low `resonance`
+// it's mellow, cranked up toward ~3+ it screams/near-self-oscillates. Classic
+// synth "filter sweep / wah" character the plain filters above can't produce.
+// mode: 'low' | 'band' | 'high'.
+function resonantFilter(b, cutoff, resonance = 1, mode = 'low') {
+    const c = fn(cutoff), q = fn(resonance);
+    let low = 0, band = 0;
+    for (let i = 0; i < b.length; i++) {
+        const t = i / SR;
+        const f = 2 * Math.sin(Math.PI * Math.min(0.245, Math.max(20, c(t)) / SR));
+        const damp = Math.min(2, 1 / Math.max(0.1, q(t)));
+        low += f * band;
+        const high = b[i] - low - damp * band;
+        band += f * high;
+        b[i] = mode === 'high' ? high : mode === 'band' ? band : low;
+    }
+    return b;
+}
+
 function ringmod(b, freq) {
     const f = fn(freq);
     let ph = 0;
@@ -117,8 +216,64 @@ function ringmod(b, freq) {
     return b;
 }
 
+// Modulated-delay chorus: thickens/widens/detunes ANY existing buffer (noise,
+// tone stacks, whole composite sounds) — a generic alternative to hand-building
+// fixed-ratio detune stacks per-sound. mixAmt near 1.0 with a slower/deeper LFO
+// reads as vibrato (pitch wobble) instead of thickening; both are the same knob.
+function chorus(b, depthMs = 8, rateHz = 0.6, mixAmt = 0.5) {
+    const n = b.length;
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        const t = i / SR;
+        const delaySamples = (depthMs / 1000) * SR * (0.5 + 0.5 * Math.sin(2 * Math.PI * rateHz * t));
+        const srcPos = i - delaySamples;
+        const i0 = Math.floor(srcPos), i1 = i0 + 1, frac = srcPos - i0;
+        const s0 = i0 >= 0 && i0 < n ? b[i0] : 0;
+        const s1 = i1 >= 0 && i1 < n ? b[i1] : 0;
+        const wet = s0 * (1 - frac) + s1 * frac;
+        out[i] = b[i] * (1 - mixAmt) + wet * mixAmt;
+    }
+    for (let i = 0; i < n; i++) b[i] = out[i];
+    return b;
+}
+
+// Amplitude tremolo — a named, reusable version of the ad hoc
+// gain(b, t => 1 + k*sin(...)) pulsing seen once in the existing file;
+// throbbing/pulsing character applicable to any category.
+function tremolo(b, rateHz = 6, depth = 0.5) {
+    return gain(b, (t) => 1 - depth * 0.5 + depth * 0.5 * Math.sin(2 * Math.PI * rateHz * t));
+}
+
 function softclip(b, drive = 2) {
     for (let i = 0; i < b.length; i++) b[i] = Math.tanh(b[i] * drive);
+    return b;
+}
+
+// Wavefolder distortion — past `threshold` the signal folds back on itself
+// instead of smoothly compressing like softclip's tanh. Harsher, weirder,
+// more "broken glass" than saturated; good for aggressive/corrupted textures.
+function foldback(b, threshold = 0.6) {
+    for (let i = 0; i < b.length; i++) {
+        let v = b[i];
+        while (Math.abs(v) > threshold) {
+            v = v > 0 ? (2 * threshold - v) : (-2 * threshold - v);
+        }
+        b[i] = v;
+    }
+    return b;
+}
+
+// Bitcrusher — quantizes amplitude to `bits` levels and sample-and-holds every
+// `rateDivide` samples (effective sample-rate reduction). Robotic/lo-fi digital
+// crunch, a different flavor of "corrupted" than the ring-mod/FM warble already
+// used for Void enemies — better suited to machine/glitch/digital-malfunction sounds.
+function bitcrush(b, bits = 6, rateDivide = 4) {
+    const levels = Math.pow(2, bits);
+    let held = 0;
+    for (let i = 0; i < b.length; i++) {
+        if (i % rateDivide === 0) held = Math.round(b[i] * levels) / levels;
+        b[i] = held;
+    }
     return b;
 }
 
@@ -158,6 +313,63 @@ function loopify(b, fadeSec = 0.5) {
     return out;
 }
 
+// Discrete decaying echo taps — rhythmic repeats rather than a continuous
+// texture. Extends the buffer's length (returns a new, longer array). Good for
+// menacing telegraphs / corrupted-signal repeats that nothing above produces.
+function echo(b, delaySec = 0.12, feedback = 0.4, taps = 3) {
+    const d = Math.round(delaySec * SR);
+    const out = new Float32Array(b.length + d * taps);
+    for (let i = 0; i < b.length; i++) out[i] += b[i];
+    let g = feedback;
+    for (let t = 1; t <= taps; t++) {
+        for (let i = 0; i < b.length; i++) {
+            const o = i + d * t;
+            if (o < out.length) out[o] += b[i] * g;
+        }
+        g *= feedback;
+    }
+    return out;
+}
+
+// Glitch-stutter: chops a buffer into grains and randomly re-repeats some of
+// them. A rhythmic-glitch texture distinct from the Machine's existing
+// ringmod-based servo-grind — reads as a skipping/corrupted signal.
+function stutter(b, grainMs = 20, repeatChance = 0.35, maxRepeats = 3) {
+    const grain = Math.max(1, Math.round((grainMs / 1000) * SR));
+    const out = [];
+    for (let i = 0; i < b.length; i += grain) {
+        const chunk = b.slice(i, Math.min(b.length, i + grain));
+        out.push(chunk);
+        if (Math.random() < repeatChance) {
+            const reps = 1 + Math.floor(Math.random() * maxRepeats);
+            for (let r = 0; r < reps; r++) out.push(chunk);
+        }
+    }
+    const total = out.reduce((s, c) => s + c.length, 0);
+    const res = new Float32Array(total);
+    let o = 0;
+    for (const c of out) { res.set(c, o); o += c.length; }
+    return res;
+}
+
+// Crossfades two buffers over time according to mixFn (0 = all `a`, 1 = all
+// `b`), rather than mix()'s fixed-gain overlay. Lets one sound genuinely
+// morph into another — e.g. a metal thunk dissolving into a Void FM warble
+// for a "corrupted metal" hybrid — which additive mixing can't produce.
+function morph(a, b, mixFn) {
+    const n = Math.max(a.length, b.length);
+    const out = new Float32Array(n);
+    const m = fn(mixFn);
+    for (let i = 0; i < n; i++) {
+        const t = i / SR;
+        const av = i < a.length ? a[i] : 0;
+        const bv = i < b.length ? b[i] : 0;
+        const k = Math.max(0, Math.min(1, m(t)));
+        out[i] = av * (1 - k) + bv * k;
+    }
+    return out;
+}
+
 // envelopes
 const expDecay = (T, delay = 0) => (t) => (t < delay ? 0 : Math.exp(-(t - delay) / T));
 const attackDecay = (atk, T) => (t) => (t < atk ? t / atk : Math.exp(-(t - atk) / T));
@@ -171,7 +383,7 @@ const swell = (up, hold, down, total) => (t) => {
 // variants on disk):  ONLY_SFX=Player_Death node tools/generate_sfx.js
 const ONLY_SFX = process.env.ONLY_SFX;
 
-function writeWav(name, samples) {
+function writeWav(name, samples, dir = OUT) {
     if (ONLY_SFX && !name.startsWith(ONLY_SFX)) return;
     const n = samples.length;
     const data = Buffer.alloc(44 + n * 2);
@@ -184,7 +396,8 @@ function writeWav(name, samples) {
         const v = Math.max(-1, Math.min(1, samples[i]));
         data.writeInt16LE((v * 32767) | 0, 44 + i * 2);
     }
-    fs.writeFileSync(path.join(OUT, name + '.wav'), data);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name + '.wav'), data);
     console.log('  ' + name + '.wav  (' + (n / SR).toFixed(2) + 's, ' + Math.round(data.length / 1024) + 'KB)');
 }
 
@@ -246,6 +459,43 @@ function metalClank(partials, sec = 0.2, noiseTick = true) {
     });
     if (noiseTick) mix(b, highpass(whiteNoise(0.015, expDecay(0.005)), 2000), 0, 0.5);
     return b;
+}
+
+// ── diversity pass (v59.9): new composite builders on top of the primitives above ──
+// Not wired into any category's sounds yet (this pass is toolkit-only) — kept
+// alongside explosion()/metalDamage()/bellNote()/metalClank() as options for
+// future sounds in any category.
+
+// Crisp taut "snap"/ping — physical-modeling family, distinct from bellNote's
+// pure sine partials and metalClank's abrupt percussive decay.
+function stringPing(freqHz, sec = 0.5, decay = 0.996) {
+    return highpass(pluck(freqHz, sec, decay), freqHz * 0.5);
+}
+
+// Warmer, more organic atmospheric swell than the existing bandpass(whiteNoise)
+// approach — pinkNoise's 1/f rolloff plus a genuine resonant sweep gives it
+// body and a "wow" the plain filters can't produce. Good for Void Pure/ambient use.
+function windSwell(sec, cutoffLow = 400, cutoffHigh = 2200) {
+    const b = pinkNoise(sec, swell(sec * 0.25, sec * 0.15, sec * 0.5, sec));
+    return resonantFilter(b, (t) => cutoffLow + (cutoffHigh - cutoffLow) * (t / sec), 2.2, 'band');
+}
+
+// Harsher, more distorted alien voice than the gentle FM warbles used so far —
+// foldback distortion plus chorus widening on an FM voice. Good for
+// higher-intensity Void Corrupted moments (enraged states, boss-phase spikes).
+function alienScreech(sec, freq = 500, index = 3) {
+    const b = fmTone(sec, (t) => freq * Math.exp(-t * 1.5) + freq * 0.3, 2.3, index, attackDecay(0.01, sec * 0.4));
+    foldback(b, 0.5);
+    return chorus(b, 6, 5.5, 0.4);
+}
+
+// Corrupted-machine/digital-malfunction texture — PWM burst + bitcrush +
+// stutter-chop. Distinct from Machine Of The Void's existing ringmod/servo-grind
+// approach; a candidate for future corrupted-tech enemies/effects.
+function digitalGlitch(sec, density = 0.4) {
+    const b = pwm(sec, (t) => 200 + Math.sin(t * 40) * 600, (t) => 0.2 + 0.3 * Math.sin(t * 17), attackDecay(0.01, sec * 0.5));
+    bitcrush(b, 5, 6);
+    return stutter(b, 18, density, 2);
 }
 
 const R = (a, b2) => a + Math.random() * (b2 - a);
@@ -660,6 +910,62 @@ engineLoop('Boss_Engine_Gatekeeper', (sec) => {
     mix(b, tone(0.2, (t) => 130 - t * 200, expDecay(0.06)), 0, 0.6);
     for (let i = 0; i < 9; i++) mix(b, lowpass(whiteNoise(0.025, expDecay(0.007)), R(700, 2200)), R(0.03, 0.35), R(0.3, 0.6));
     writeWav('Asteroid_Break_a', normalize(declick(b), 0.74)); }
+
+// ════════════════════════ TOOLKIT DEMOS (v59.9 diversity pass) ════════════════════════
+// Preview-only WAVs for the new primitives/composites above. They're written to a
+// separate folder and use names that don't appear in sfxList, so the game never
+// loads them — delete the folder anytime, or regenerate just these with
+// ONLY_SFX=Toolkit_Demo node tools/generate_sfx.js
+const DEMO_OUT = path.join(__dirname, '..', 'assets', 'sfx', '_toolkit_demos');
+console.log('Generating toolkit demos into ' + DEMO_OUT);
+
+writeWav('Toolkit_Demo_PinkNoise', normalize(declick(pinkNoise(1.2, swell(0.3, 0.3, 0.6, 1.2))), 0.7), DEMO_OUT);
+
+writeWav('Toolkit_Demo_ResonantSweep', normalize(declick(
+    resonantFilter(whiteNoise(1.2, 0.9), (t) => 200 + t * 3000, 3.2, 'band')
+), 0.75), DEMO_OUT);
+
+{   const b = detunedUnison(0.9, 220, attackDecay(0.02, 0.5), 'saw', 5, 20);
+    writeWav('Toolkit_Demo_Chorus', normalize(declick(chorus(b, 10, 0.7, 0.6)), 0.75), DEMO_OUT); }
+
+writeWav('Toolkit_Demo_Tremolo', normalize(declick(
+    tremolo(tone(1.2, 300, attackDecay(0.02, 0.9)), 7, 0.8)
+), 0.7), DEMO_OUT);
+
+writeWav('Toolkit_Demo_Foldback', normalize(declick(
+    foldback(tone(0.6, (t) => 220 + t * 200, attackDecay(0.01, 0.4), 'sin'), 0.35)
+), 0.7), DEMO_OUT);
+
+writeWav('Toolkit_Demo_Bitcrush', normalize(declick(
+    bitcrush(tone(0.6, (t) => 300 - t * 150, attackDecay(0.01, 0.4)), 4, 8)
+), 0.7), DEMO_OUT);
+
+writeWav('Toolkit_Demo_PWM', normalize(declick(
+    pwm(0.9, 180, (t) => 0.1 + 0.4 * (0.5 + 0.5 * Math.sin(t * 6)), attackDecay(0.02, 0.6))
+), 0.7), DEMO_OUT);
+
+writeWav('Toolkit_Demo_Unison', normalize(declick(
+    detunedUnison(0.8, 165, attackDecay(0.02, 0.5), 'saw', 7, 24)
+), 0.75), DEMO_OUT);
+
+writeWav('Toolkit_Demo_Pluck', normalize(declick(pluck(220, 1.5, 0.997)), 0.75), DEMO_OUT);
+
+writeWav('Toolkit_Demo_Echo', normalize(declick(
+    echo(tone(0.05, 900, expDecay(0.02)), 0.14, 0.5, 4)
+), 0.75), DEMO_OUT);
+
+writeWav('Toolkit_Demo_Stutter', normalize(declick(
+    stutter(tone(1.0, (t) => 260 + t * 120, attackDecay(0.02, 0.8)), 22, 0.4, 2)
+), 0.75), DEMO_OUT);
+
+writeWav('Toolkit_Demo_Morph', normalize(declick(
+    morph(metalDamage(900, 0.5), fmTone(0.5, 360, 1.41, 1.8, expDecay(0.2)), (t) => t / 0.5)
+), 0.75), DEMO_OUT);
+
+writeWav('Toolkit_Demo_StringPing', normalize(declick(stringPing(330, 1.0, 0.997)), 0.78), DEMO_OUT);
+writeWav('Toolkit_Demo_WindSwell', normalize(declick(windSwell(1.4, 300, 2400)), 0.72), DEMO_OUT);
+writeWav('Toolkit_Demo_AlienScreech', normalize(declick(alienScreech(0.7, 500, 3.2)), 0.8), DEMO_OUT);
+writeWav('Toolkit_Demo_DigitalGlitch', normalize(declick(digitalGlitch(0.9, 0.45)), 0.75), DEMO_OUT);
 
 console.log('Done.');
 

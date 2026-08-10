@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fighters Of The Void — Design Improvement Report</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; background: #0e0e1a; color: #d0d0e8; margin: 0; padding: 30px; max-width: 1100px; margin-left: auto; margin-right: auto; }
+  h1 { color: #a78bfa; font-size: 2em; margin-bottom: 4px; }
+  h2 { color: #7dd3fc; font-size: 1.25em; margin-top: 40px; margin-bottom: 10px; border-bottom: 1px solid #2a2a4a; padding-bottom: 6px; }
+  h3 { color: #c4b5fd; font-size: 1.02em; margin-bottom: 6px; margin-top: 20px; }
+  .subtitle { color: #6b7280; font-size: 0.95em; margin-bottom: 30px; }
+  .meta-row { display: flex; gap: 30px; flex-wrap: wrap; margin-bottom: 24px; }
+  .meta-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 14px 20px; min-width: 150px; }
+  .meta-card .label { font-size: 0.75em; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; }
+  .meta-card .value { font-size: 1.25em; font-weight: bold; color: #a78bfa; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.92em; }
+  th { background: #1e1e38; color: #7dd3fc; text-align: left; padding: 10px 14px; font-weight: 600; border-bottom: 2px solid #2a2a4a; }
+  td { padding: 9px 14px; border-bottom: 1px solid #1e1e30; vertical-align: top; }
+  tr:hover td { background: #1a1a2e; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.78em; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }
+  .tag-p1 { background: #1f2d1a; color: #86efac; }
+  .tag-p2 { background: #1e3a5f; color: #7dd3fc; }
+  .tag-p3 { background: #2d1a4a; color: #c4b5fd; }
+  .tag-big { background: #7f1d1d; color: #fca5a5; }
+  .section { background: #13132a; border: 1px solid #2a2a4a; border-radius: 10px; padding: 20px 24px; margin-bottom: 24px; }
+  .highlight { color: #fbbf24; }
+  .danger { color: #f87171; }
+  .good { color: #4ade80; }
+  ul { margin: 8px 0 14px; padding-left: 22px; }
+  li { margin-bottom: 7px; line-height: 1.45; }
+  p { line-height: 1.55; }
+  .pull { border-left: 3px solid #a78bfa; padding: 8px 16px; background: #1a1a2e; border-radius: 0 8px 8px 0; margin: 14px 0; color: #c4b5fd; font-style: italic; }
+  footer { margin-top: 40px; color: #374151; font-size: 0.8em; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Fighters Of The Void</h1>
+<div class="subtitle">Design Improvement Report — From Decent to Great &nbsp;·&nbsp; v59.7 &nbsp;·&nbsp; 2026-07-07</div>
+
+<div class="meta-row">
+  <div class="meta-card"><div class="label">Focus Areas</div><div class="value">7</div></div>
+  <div class="meta-card"><div class="label">Recommendations</div><div class="value">24</div></div>
+  <div class="meta-card"><div class="label">Quick Wins (P1)</div><div class="value">8</div></div>
+  <div class="meta-card"><div class="label">Flagship Features</div><div class="value">3</div></div>
+</div>
+
+<div class="section">
+<h2 style="margin-top:0">Executive Summary</h2>
+<p>The game's combat foundation is genuinely strong: five levels of escalating faction warfare, seven bosses
+with real mechanical identity, a four-class enemy taxonomy with its own audio language, and a polished
+feel layer (silhouette hit flashes, muzzle flashes, class-signature soundscape). What separates it from
+"great" is almost entirely <span class="highlight">structural, not mechanical</span>: everything the player earns is
+random, temporary, and disconnected. Score means nothing. Upgrades arrive by luck and vanish at death.
+Every run is the same five levels in the same order, and the excellent lore (Controlled Humans, the Void's
+two faces, the Defender invasion) is locked away in menu guides instead of being told through play.</p>
+<div class="pull">The three flagship changes: make points a spendable currency, make weapon growth a
+series of player choices instead of lucky drops, and let the story happen inside the levels rather than
+beside them.</div>
+</div>
+
+<h2>1 · The Gameplay Loop — moment to moment</h2>
+<div class="section">
+<p>Right now the loop is: <em>hold fire, weave, collect whatever drops, survive until the boss</em>. It works, but
+the player is never asked to make an interesting decision mid-wave. Recommendations, in order of impact:</p>
+<ul>
+  <li><b>Combo / multiplier meter.</b> Kills within ~2s of each other build a multiplier (×1 → ×5) that decays
+  on idle and <em>resets when you take a hit</em>. Instantly, every second of play has stakes beyond survival:
+  play aggressively to keep the chain, play safe and lose income. This single system converts the existing
+  score into moment-to-moment motivation — and it feeds directly into the currency economy in §4.</li>
+  <li><b>Graze reward.</b> Bullets that pass within a few pixels of the ship pay a small multiplier bump and a
+  spark effect. It rewards exactly the behaviour that makes shmups thrilling — flying <em>toward</em> danger —
+  and it costs nothing to lose. (The near-miss detection is cheap: one distance check on bullets already iterated.)</li>
+  <li><b>A panic button.</b> The genre-standard bomb: one screen-clearing Void Pulse with 2–3 stocks per level.
+  Deaths to overwhelming bullet walls currently feel unfair; a bomb converts them into "I misjudged my
+  resources", which is the difference between quitting and one-more-run. Ties into lore trivially (captured
+  Void tech, unstable, hence limited).</li>
+  <li><b>Mini-objectives inside levels.</b> Once or twice per level, a timed optional event: "a Defender convoy
+  is crossing — destroy the escort in 20s for a guaranteed curved-gun drop", "a Void rift is opening — close it
+  before it finishes spawning". The phase system already exists; these give phases identity beyond spawn-table
+  changes.</li>
+  <li><b>Hit feedback asymmetry.</b> Player damage currently reads similarly whether it's 5 HP or 40 HP. Scale
+  screen shake, flash and a short low-pass audio duck with damage size so big hits <em>feel</em> big and chip
+  damage stays quiet.</li>
+</ul>
+</div>
+
+<h2>2 · Weapon Systems &amp; Advancement</h2>
+<div class="section">
+<p>Current state: main gun (firepower 1–5), rapid fire (timer), tracking guns (elite drops), curved gun (1–3),
+all acquired by <span class="danger">random drop luck</span>, stacking on top of each other, and all lost on
+death. Every maxed-out ship ends up flying the same loadout, because the game never asks "which weapon do you
+want to be flying" — it only ever asks "do you want more of what you already have."</p>
+
+<h3>Why the obvious fix doesn't work here</h3>
+<p>The first idea anyone reaches for is a choice popup: when a drop lands, slow time and offer two options,
+pick one with a keypress. That gives the player <em>a</em> decision, but not a ship that plays differently
+from run to run — and it runs straight into the constraint that matters most in this genre: anything that
+pauses the action, even for a second, to show boxes to click is a tax on a game about never looking away from
+the bullets. A choice screen every 20 seconds is a choice screen the player starts resenting by level 3.</p>
+<p>The real problem is harder and more interesting: let the player <em>actively pick</em> which weapon they're
+flying, let them change their mind mid-run, and don't let switching become a free respec to full power —
+without ever taking their hands off the controls or their eyes off the screen.</p>
+
+<h3>The mechanism: separate "owned" from "equipped"</h3>
+<p>The trick that makes this work without any menu is to stop treating weapon power as one number that belongs
+to the player, and instead give <span class="highlight">each weapon its own level</span>, tracked independently,
+whether or not it's currently active. Only one of them fires at a time — that's the loadout — and a single
+keypress swaps which one is live, instantly, with no pause and no screen.</p>
+<p>That one change answers both halves of the problem at once:</p>
+<ul>
+  <li><b>Switching is free to do, but not free in effect.</b> Tapping a hotkey to swap from Laser to Missiles
+  is instant — but if the player has been feeding every pickup into Laser all run and never touched Missiles,
+  swapping over hands them a level-1 Missile gun, not a maxed one. The power sits with the weapon, not the
+  player, so there's a real reason to commit to one thing for a while instead of flicking between all of them
+  constantly.</li>
+  <li><b>Changing your mind is always available and never a wasted decision.</b> If a level throws a bullet
+  pattern that a piercing gun handles better than a spread gun, the player can switch immediately — they just
+  won't be at full strength on it yet. That's a trade-off made in the moment, not a choice locked in ahead of
+  time.</li>
+</ul>
+
+<h3>How the switch itself should feel</h3>
+<p>None of these need a menu — each is just an input, the same category of action as firing or moving:</p>
+<ul>
+  <li><b>Dedicated keys per weapon (1/2/3).</b> Most direct — press the number for the weapon you want live.
+  Works best once the player owns 3–4 weapon types and wants to jump straight to a specific one.</li>
+  <li><b>One cycle key (Q or Tab).</b> Steps to the next owned weapon in order. Fewer keys to teach and easier
+  to reach one-handed, at the cost of sometimes stepping past the one actually wanted.</li>
+  <li><b>A charging selector, Gradius-style.</b> A small strip of icons in the HUD; a special pickup nudges a
+  highlight along the strip, one button commits whichever weapon is currently lit. More thematic (could be
+  reskinned as unstable "Void tech"), and adds its own small moment of "wait for the right one, then commit" —
+  but it's one more idea to explain before it clicks for a new player.</li>
+</ul>
+<p>All three keep the actual swap to a single keypress with nothing on screen changing but the HUD icon. Start
+with dedicated number keys — it's the least ambiguous — and only look at the cycling or charging versions later
+if playtesting shows the number-key mapping feels cluttered.</p>
+
+<h3>Guarding against switch-spam</h3>
+<p>Because the swap itself is free, a player could in principle flick between weapons every half-second to
+dodge whatever a specific bullet colour "counters." If that shows up in testing, the fix doesn't need to touch
+the core system: a short 1–2 second cooldown between switches, or a brief power ramp-up on the weapon just
+switched <em>to</em>, both discourage spamming without ever putting a menu back in the way.</p>
+
+<h3>Where the extra weapon variety comes from</h3>
+<p>Right now there are really only two "feel" categories in the game — a straight gun and a curved/homing gun —
+which isn't enough for a slot system to mean anything; swapping between two similar guns isn't an interesting
+choice. The weapon-tree ideas already floated for this game are the right raw material: turn <b>Lance</b>
+(piercing, narrow), <b>Storm</b> (wide spread), <b>Hunter</b> (homing missiles) and <b>Orbit</b> (defensive ring
+shots) into four genuinely distinct primary weapons instead of end-of-run branch choices. Most of the
+projectile behaviour for these already exists in some form in the current gun, tracking, and curved-shot code —
+the work is separating them into standalone weapons with their own pickup and their own level, not inventing new
+projectiles from nothing.</p>
+<p>Pickups should be colour- and shape-coded per weapon, so a player can tell "that's a Lance pickup" at a
+glance, the same way enemy bullets are already read by colour. Choosing what to grab — or which weapon to lean
+into — becomes a read made in a fraction of a second while flying, not a decision that needs explaining.</p>
+
+<h3>What stays as-is</h3>
+<p>Not everything needs folding into the slot system. Rapid fire reads naturally as a fire-rate buff that
+applies to whichever weapon is currently equipped, rather than being a weapon of its own. A defensive layer —
+shield, or a fixed always-on secondary like a light curved-shot — can stay separate and non-swappable, so the
+player never drops to zero capability while experimenting with the primary slot.</p>
+
+<h3>Softening death, revisited</h3>
+<p>With per-weapon levels, "lose everything on death" becomes "lose progress on several weapons independently" —
+which is actually easier to make forgiving: drop every owned weapon by one level rather than wiping the whole
+loadout, so a death costs real ground without deleting an entire run's worth of decisions.</p>
+
+<ul>
+  <li><b>Overdrive instead of flat rapid-fire.</b> Still stands on its own regardless of the above: replace the
+  rapid-fire timer with a heat/overdrive bar charged by kills, giving a burst of drastically boosted fire on
+  demand. Player-activated power beats passively-timed power either way.</li>
+</ul>
+</div>
+
+<h2>3 · Sense of Progress</h2>
+<div class="section">
+<ul>
+  <li><b>Within a run:</b> the ship should visibly change as it grows. Turret models for tracking/curved already
+  exist — extend that: firepower changes bullet visuals per tier (already partially true), overdrive adds an
+  engine glow state, max-build ships should <em>look</em> dangerous. Add a phase banner ("PHASE 4 — THE FLEET
+  ARRIVES") using the GET READY splash machinery so mid-level escalation is announced, not just felt.</li>
+  <li><b>Across runs:</b> a persistent <span class="highlight">pilot profile</span> in localStorage (the mixer
+  already persists settings, so the plumbing exists): total kills per enemy type, best level reached, best score
+  per difficulty, boss kill counts, deaths by cause. One "Records" screen off the title menu. Cheap, and it makes
+  every run leave a mark.</li>
+  <li><b>Medals.</b> 15–20 named achievements checked at run end (no-damage boss, 100% guide unlocked, beat L3
+  without bombs, ×5 chain for 60s). Displayed on the Records screen; each medal can also gate an unlock (§5).</li>
+  <li><b>End-of-level report card.</b> Between levels, a 3-second summary: kills, accuracy, peak chain, damage
+  taken, grade (D–S). Grades create self-set goals and give the between-level shop (§4) a natural home.</li>
+</ul>
+</div>
+
+<h2>4 · Use of Points</h2>
+<div class="section">
+<p>Score currently does nothing but sit in the HUD — the single biggest untapped system in the game.
+Convert it into the spine of the whole experience:</p>
+<ul>
+  <li><b>Score = currency ("Salvage").</b> Between levels, a 3-item shop: repair (health), one weapon-tree
+  step of your choice, +1 bomb stock, shield charge, or bank it. Suddenly every point earned in combat is a
+  decision deferred — and the combo/graze systems from §1 become an economy, not just bragging rights.</li>
+  <li><b>Continues cost points.</b> On death after the checkpoint: "Continue from checkpoint — 5,000 salvage"
+  (scaling per use). Skilled play literally buys survivability; hoarding vs spending becomes a strategy axis.</li>
+  <li><b>High-score table.</b> Local top-10 per difficulty with date and level reached. The game already has the
+  polish level where players will chase this; it costs one localStorage array and one screen.</li>
+  <li><b>Chain-banked bonuses.</b> End-of-phase payout = base points × peak chain that phase, presented with a
+  satisfying tally sound. Makes the multiplier legible and celebratory.</li>
+</ul>
+</div>
+
+<h2>5 · Unlocks</h2>
+<div class="section">
+<ul>
+  <li><b>Ship variants</b> (unlocked by medals/levels, chosen at difficulty select):
+  <em>Vanguard</em> (default), <em>Wraith</em> (faster, 75 HP, starts with curved 1), <em>Bastion</em>
+  (slower, 125 HP + shield start, weaker gun). Different starting loadouts multiply replay value against the
+  same content for near-zero new content cost.</li>
+  <li><b>Challenge modes from existing machinery:</b> the sandbox already spawns any boss — a <b>Boss Rush</b>
+  mode (all 7 back-to-back, shared health pool, leaderboard entry) is mostly menu work. Similarly a
+  <b>Gauntlet</b> (endless waves from the existing spawn tables, difficulty ramping every 90s).</li>
+  <li><b>Guide entries as collectibles.</b> The enemy/boss guides are already excellent — lock each entry until
+  the enemy has been killed once (silhouette + "???" before). Turns the codex into a collection drive and
+  rewards using the guides. Kill-count tiers (10/100) can add flavor text per entry.</li>
+  <li><b>Earned cosmetics, not stats:</b> engine trail colors, bullet tints, victory emblems for hard-mode
+  clears — visible in-game and on the records screen.</li>
+</ul>
+</div>
+
+<h2>6 · Variety</h2>
+<div class="section">
+<ul>
+  <li><b>Champion variants.</b> A small % of any enemy spawns as a named champion: tinted, 3× HP, one modifier
+  (splits on death / drops a bomb stock / shielded until close range). One system, applied to 20+ existing
+  enemy types, yields hundreds of encounter permutations — the cheapest variety multiplier available.</li>
+  <li><b>Level events ("Void weather").</b> Per-phase ambient modifiers announced by banner: meteor crossfire,
+  void fog (reduced visibility, enemies emerge closer), Defender ceasefire (Defenders ignore you for 30s and
+  fight the Void — showcase the three-way war!), gravity eddies that curve all bullets. Two or three per level,
+  randomized, so runs stop being identical.</li>
+  <li><b>Branch choice at level end.</b> After the report card: "Route A — asteroid belt (dense hazards, +50%
+  salvage) / Route B — patrol corridor (safer, standard)". Even two short alternate phase-tables per level
+  create the feeling of a campaign map.</li>
+  <li><b>Promote the candidate enemies.</b> Twelve finished sandbox-only enemies (aegis, minelayer, breacher,
+  phantom…) are already built and tested — graduating even six of them into late-level spawn tables and champion
+  pools is free content.</li>
+</ul>
+</div>
+
+<h2>7 · Story</h2>
+<div class="section">
+<p>The lore is already unusually good for an arcade shmup — four factions with a real geometry between them
+(humans enslaved, Void corrupting, Void Pure invading, Defenders arriving with their own agenda in L5).
+The problem is that it's all in menus. Move it into the run:</p>
+<ul>
+  <li><b>Mission briefings.</b> Three lines of fiction on the GET READY screen per level (it now exists and
+  already holds the player for a beat): who you're flying against, why, one hook. Zero new UI needed.</li>
+  <li><b>Wingman barks.</b> A single character — a comms officer — delivering one-line subtitles at scripted
+  beats: first dreadnought ("That's a carrier. Kill the escorts first."), Defender arrival ("Unknown fleet —
+  they're not shooting at the Void… wait, they're not shooting at <em>us</em> either."), Gatekeeper discovery.
+  10–15 lines total; text-only; enormous personality return.</li>
+  <li><b>Boss title cards.</b> One second, name + epithet: "THE KNIGHT — Oathbreaker of the Third Fleet".
+  The bosses have mechanical identity; give them narrative identity for free.</li>
+  <li><b>An actual ending scene</b> beyond the victory screen: three beats of text over the starfield after the
+  Machine falls, and a post-Gatekeeper stinger that names the next threat — sequel hook for the wider
+  <em>Void Series</em>.</li>
+  <li><b>Environmental storytelling.</b> The background system (planets, nebulae) can carry story: L2's planet
+  cracked and venting after the boss; Defender wreckage drifting in L5 backgrounds; the Machine's level sky
+  darkening as its health falls (the corruption tint already exists).</li>
+</ul>
+</div>
+
+<h2>Prioritized Roadmap</h2>
+<div class="section">
+<table>
+  <thead><tr><th>Priority</th><th>Feature</th><th>Area</th><th>Effort</th><th>Why this order</th></tr></thead>
+  <tbody>
+    <tr><td><span class="tag tag-p1">P1 · Quick wins</span></td><td>Combo multiplier + chain payout</td><td>Loop / Points</td><td>Low</td><td>Unlocks the entire economy; makes score matter on day one</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Boss title cards + mission briefings</td><td>Story</td><td>Low</td><td>Uses existing GET READY splash; instant personality</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>High-score table + pilot records</td><td>Progress</td><td>Low</td><td>localStorage plumbing already proven by the mixer</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Guide entries unlock by kills</td><td>Unlocks</td><td>Low</td><td>Guides already exist; adds a collection drive</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Softened death penalty (drop every weapon 1 level, not a full wipe)</td><td>Weapons</td><td>Low</td><td>Biggest frustration-remover in the game</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Void Pulse bomb (2 stocks/level)</td><td>Loop</td><td>Low-Med</td><td>Bullet-wall deaths become decisions, not luck</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Promote 6 candidate enemies into spawn tables</td><td>Variety</td><td>Low</td><td>Content already built and tested in sandbox</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Damage-scaled hit feedback</td><td>Loop</td><td>Low</td><td>Pure feel; small numbers, big perceived difference</td></tr>
+    <tr><td><span class="tag tag-p2">P2 · Systems</span></td><td>Salvage shop between levels</td><td>Points</td><td>Medium</td><td>Needs the combo economy live first</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>Per-weapon loadout + hotkey swap (1/2/3)</td><td>Weapons</td><td>Medium-High</td><td>Foundation for build identity, no menus required</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>Graze system</td><td>Loop</td><td>Medium</td><td>Tune after combo meter exists</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>Champion enemy variants</td><td>Variety</td><td>Medium</td><td>One system, huge encounter variety</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>End-of-level report card + grades</td><td>Progress</td><td>Medium</td><td>Natural host for the shop screen</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>Wingman barks (10–15 lines)</td><td>Story</td><td>Medium</td><td>Script first, then trivial to display</td></tr>
+    <tr><td><span class="tag tag-p3">P3 · Expansion</span></td><td>Four distinct primary weapons (Lance / Storm / Hunter / Orbit)</td><td>Weapons</td><td>High</td><td>Gives the loadout system enough real variety to matter</td></tr>
+    <tr><td><span class="tag tag-p3">P3</span></td><td>Ship variants (Wraith / Bastion)</td><td>Unlocks</td><td>Medium-High</td><td>Replay multiplier once economy + medals exist</td></tr>
+    <tr><td><span class="tag tag-p3">P3</span></td><td>Boss Rush + Gauntlet modes</td><td>Unlocks</td><td>Medium</td><td>Sandbox already proves the spawning machinery</td></tr>
+    <tr><td><span class="tag tag-p3">P3</span></td><td>Void weather + route branches</td><td>Variety</td><td>High</td><td>The campaign-map feel; save for last</td></tr>
+    <tr><td><span class="tag tag-big">Flagship</span></td><td>Combo economy → shop → continues (the money loop)</td><td>Points</td><td>—</td><td>§1 + §4 together: the single biggest decent→great lever</td></tr>
+    <tr><td><span class="tag tag-big">Flagship</span></td><td>Loadout-driven weapon builds</td><td>Weapons</td><td>—</td><td>§2: no two runs play the same, and no menus interrupt play</td></tr>
+    <tr><td><span class="tag tag-big">Flagship</span></td><td>Story told in-run, not in menus</td><td>Story</td><td>—</td><td>§7: the lore is already written — surface it</td></tr>
+  </tbody>
+</table>
+<p style="color:#9ca3af; font-size:0.9em">Effort ratings assume the existing single-file architecture and reuse of
+proven machinery (GET READY splash, sandbox spawner, localStorage persistence, guide screens). Everything in P1 is
+achievable without structural refactors.</p>
+</div>
+
+<footer>Fighters Of The Void — Design Improvement Report · generated 2026-07-07 · weapons section revised 2026-07-08 · The Void Series</footer>
+</body>
+</html>
