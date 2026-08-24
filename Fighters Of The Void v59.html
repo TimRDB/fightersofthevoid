@@ -1420,6 +1420,7 @@
                 Defender_Hit:           GEN + 'Defender_Hit_a.wav',
                 Void_Hit:               GEN + 'Void_Hit_a.wav',
                 PureVoid_Hit:           GEN + 'PureVoid_Hit_a.wav',
+                Boss_Hit:               GEN + 'Boss_Hit_a.wav', // v59.8: boss taking damage from the player (was silent)
                 // Deaths
                 Explosion_Small:        _sfxEmbedded.Explosion_Small, // v59.7c: embedded
                 Explosion_Small_2:      _sfxEmbedded.Explosion_Small_2, // v59.7c: embedded
@@ -1440,6 +1441,7 @@
                 LaserBomb_Warn:         GEN + 'LaserBomb_Warn_a.wav',
                 LaserBomb_Fire:         GEN + 'LaserBomb_Fire_a.wav',
                 Machine_Laser:          GEN + 'Machine_Laser_a.wav',
+                Machine_Shoot:          GEN + 'Machine_Shoot_a.wav', // v59.8: Machine Of The Void's basic gun patterns (was silent)
                 // Boss deaths + specials
                 Boss_Explosion_Long:    GEN + 'Boss_Explosion_Long_a.wav',
                 Boss_Pattern_Shot:      GEN + 'Boss_Pattern_Shot_a.wav', // v59.6c: boss pattern fire sound
@@ -1473,13 +1475,13 @@
             const CRITICAL = new Set([
                 'Enemy_Normal_Shoot', 'Enemy_Heavy_Shoot', 'Enemy_Sniper_Shoot', 'Enemy_Drone_Shoot',
                 'Void_Shoot', 'Void_Sniper_Shoot', 'Defender_Shoot', 'Defender_Heavy_Shoot', 'PureVoid_Shoot',
-                'Metal_Hit', 'Metal_Hit_2', 'Void_Hit', 'Defender_Hit', 'PureVoid_Hit',
+                'Metal_Hit', 'Metal_Hit_2', 'Void_Hit', 'Defender_Hit', 'PureVoid_Hit', 'Boss_Hit',
                 'Explosion_Small', 'Explosion_Small_2', 'Explosion_Medium', 'Void_Death', 'PureVoid_Death',
                 'Powerup_Health', 'Powerup_Shield', 'Powerup_Firepower', 'Powerup_RapidFire',
                 'Powerup_SpeedUp', 'Powerup_SpeedDown', 'Powerup_Tracking', 'Powerup_Curved',
                 'Player_Shoot_Tracking', 'Player_Shoot_Curved',
                 'Player_Shield_Hit', 'Player_Shield_Deplete', 'Protector_Shield_Hit',
-                'Boss_Pattern_Shot' // v59.6c: boss patterns fire frequently during fights
+                'Boss_Pattern_Shot', 'Machine_Shoot' // v59.6c/v59.8: boss patterns fire frequently during fights
             ]);
 
             game.sfxPools = {};
@@ -1758,6 +1760,28 @@
                 playSfxVariant('Protector_Shield_Hit', volume, 0.06, 0.08);
                 shield.hitSoundTime = now;
                 shield.hitsSinceSound = 0;
+            }
+        }
+
+        // v59.8: boss hit sound — mirrors playProtectorShieldHit's burst-volume-decay
+        // model. A boss is a single large hitbox that can take many simultaneous
+        // bullet hits (rapid-fire/burst weapons, tracking swarms), so without this
+        // throttle a dense volley would stack into an overwhelming wall of noise;
+        // instead the lead hit in a burst stays loud and each additional hit within
+        // the window gets quieter, resetting to full volume after a lull.
+        function playBossHitSound(boss) {
+            if (!boss) return;
+            const now = Date.now();
+            const gap = now - (boss.lastHitBulletMs || 0);
+            boss.lastHitBulletMs = now;
+            if (gap > 90) boss.hitsSinceSound = 0; // fresh burst after a lull -> loud
+            boss.hitsSinceSound = (boss.hitsSinceSound || 0) + 1;
+            if (!boss.hitSoundTime || now - boss.hitSoundTime >= 55) {
+                const layer = boss.hitsSinceSound - 1; // 0 for a lone bullet -> loudest
+                const volume = Math.max(0.14, 0.62 - layer * 0.12);
+                playSfxVariant('Boss_Hit', volume, 0.14, 0.05);
+                boss.hitSoundTime = now;
+                boss.hitsSinceSound = 0;
             }
         }
 
@@ -13321,6 +13345,7 @@
         }
         
         function executeCountComplexAttack(boss) {
+            playSfxVariant('Void_Shoot', 0.62, 0.08, 0.05, 0, 0.85); // v59.8: complex attack was silent (deeper pitch to read as "bigger")
             const complexPatterns = {
                 0: () => { // Orbital void mines
                     for (let orbit = 0; orbit < 3; orbit++) {
@@ -13691,6 +13716,7 @@
         }
         
         function fireComplexClusterPattern(boss) {
+            playSfxVariant('Cluster_Launch', 0.6, 0.08, 0.06); // v59.8: multi-bomb deploy was silent (single-bomb fireClusterBomb already had this)
             boss.clusterBombPattern = (boss.clusterBombPattern + 1) % 3;
             
             switch (boss.clusterBombPattern) {
@@ -14381,6 +14407,7 @@
         }
         
         function fireMachinePattern(boss) {
+            playSfxVariant('Machine_Shoot', 0.6, 0.1, 0.06); // v59.8: basic gun pattern was silent
             const patterns = {
                 0: () => machinePatternSpread(boss),
                 1: () => machinePatternBarrage(boss),
@@ -15186,6 +15213,7 @@
         }
 
         function fireGatekeeperLaserBombs(boss) {
+            playSfxVariant('Cluster_Launch', 0.6, 0.08, 0.06, 0, 0.9); // v59.8: bomb deploy was silent (matches destroyer3's fireLaserBomb)
             // v59.6: capped at 2 (was up to 4)
             const cnt = Math.min(2, 1 + Math.floor(boss.phase / 3));
             for (let i = 0; i < cnt; i++) {
@@ -19079,7 +19107,8 @@
                             if (VISUAL_CONFIG.enemyHitFlash) boss.hitFlashTimer = 4;
                             // Sandbox: keep boss alive when enemy invincibility is active
                             if (game.sandboxInvincibleEnemies) boss.health = Math.max(1, boss.health);
-                            
+                            playBossHitSound(boss); // v59.8: boss taking damage was silent
+
                             // Create hit effect
                             createHitExplosion(boss.x, boss.y);
                             
@@ -21178,6 +21207,7 @@
                         if (VISUAL_CONFIG.enemyHitFlash) game.boss.hitFlashTimer = 4;
                         // Sandbox: keep boss alive when enemy invincibility is active
                         if (game.sandboxInvincibleEnemies) game.boss.health = Math.max(1, game.boss.health);
+                        playBossHitSound(game.boss); // v59.8: boss taking damage was silent
                         createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
 
                         if (bullet.isTrackingOverflow && document.getElementById('bossHealthFill')) {
@@ -21282,6 +21312,7 @@
                         if (VISUAL_CONFIG.enemyHitFlash) game.boss.hitFlashTimer = 4;
                         // Sandbox: keep boss alive when enemy invincibility is active
                         if (game.sandboxInvincibleEnemies) game.boss.health = Math.max(1, game.boss.health);
+                        playBossHitSound(game.boss); // v59.8: boss taking damage was silent
                         createHitExplosion(bullet.x, bullet.y, bullet.speedX, bullet.speedY);
 
                         if (game.boss.health <= 0 && !game.boss.selfDestructExploding) {
@@ -32393,6 +32424,8 @@
                         'PureVoid_Shoot': { usage: 'Enemy - Pure Void Shot', class: 'Void Pure' },
                         'PureVoid_Hit': { usage: 'Enemy - Pure Void Hit', class: 'Void Pure' },
                         'PureVoid_Death': { usage: 'Enemy - Pure Void Death', class: 'Void Pure' },
+                        'Boss_Hit': { usage: 'Boss - Damaged By Player', class: 'Boss' },
+                        'Machine_Shoot': { usage: 'Boss - Machine Gun Pattern', class: 'Boss' },
 
                         // Powerups
                         'Powerup_Health': { usage: 'Powerup - Health', class: 'Powerup' },

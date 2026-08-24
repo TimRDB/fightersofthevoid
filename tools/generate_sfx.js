@@ -382,6 +382,23 @@ const swell = (up, hold, down, total) => (t) => {
 // Regenerate a single sound without touching the rest (protects hand-kept
 // variants on disk):  ONLY_SFX=Player_Death node tools/generate_sfx.js
 const ONLY_SFX = process.env.ONLY_SFX;
+if (ONLY_SFX) console.log('ONLY_SFX="' + ONLY_SFX + '" is set — every other sound will be SKIPPED this run.');
+
+// v59.8: writeFileSync occasionally throws on Windows for a file that's
+// transiently locked (antivirus scanning the new file, OneDrive/cloud sync,
+// the WAV still open in a media player/preview tab) — that used to be an
+// uncaught exception that killed the whole script mid-list, silently
+// skipping every sound after the one that failed. Retry a few times first
+// (the lock is almost always gone within a few hundred ms), and if it still
+// fails, record it and keep going instead of aborting the rest of the batch.
+const failedWrites = [];
+let writtenCount = 0;
+
+function sleepMs(ms) {
+    try {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    } catch (e) { /* no SharedArrayBuffer/Atomics — skip the wait, retry immediately */ }
+}
 
 function writeWav(name, samples, dir = OUT) {
     if (ONLY_SFX && !name.startsWith(ONLY_SFX)) return;
@@ -396,9 +413,24 @@ function writeWav(name, samples, dir = OUT) {
         const v = Math.max(-1, Math.min(1, samples[i]));
         data.writeInt16LE((v * 32767) | 0, 44 + i * 2);
     }
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, name + '.wav'), data);
-    console.log('  ' + name + '.wav  (' + (n / SR).toFixed(2) + 's, ' + Math.round(data.length / 1024) + 'KB)');
+    const filePath = path.join(dir, name + '.wav');
+    const MAX_ATTEMPTS = 4;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(filePath, data);
+            console.log('  ' + name + '.wav  (' + (n / SR).toFixed(2) + 's, ' + Math.round(data.length / 1024) + 'KB)');
+            writtenCount++;
+            return;
+        } catch (e) {
+            if (attempt === MAX_ATTEMPTS) {
+                console.error('  ✗ FAILED: ' + name + '.wav — ' + e.message);
+                failedWrites.push(name);
+                return;
+            }
+            sleepMs(150 * attempt); // back off and retry — most locks clear within a few hundred ms
+        }
+    }
 }
 
 // composite builders
@@ -636,6 +668,12 @@ function softChime(freqHz, sec = 0.24) {
     const b = bandpass(whiteNoise(0.15, attackDecay(0.012, 0.05)), (t) => 650 - t * 1800, 0.5);
     mix(b, tone(0.12, (t) => 280 - t * 700, expDecay(0.04)), 0, 0.3);
     writeWav('PureVoid_Hit_a', normalize(declick(b), 0.68)); }
+{   // v59.8: Boss hit — same damage skeleton as the enemy hits above, but bigger/
+    // deeper/with more low end to read as heavy plating on a massive hull rather
+    // than a fighter-sized ship. Shared by every boss type when the player damages it.
+    const b = metalDamage(560, 0.16, [[420, 0.22], [710, 0.1]]);
+    mix(b, lowpass(whiteNoise(0.06, expDecay(0.025)), 220), 0, 0.55); // extra low thud for boss mass
+    writeWav('Boss_Hit_a', normalize(declick(b), 0.78)); }
 
 // ════════════════════════ DEATH EXPLOSIONS ════════════════════════
 writeWav('Explosion_Small_a', normalize(declick(explosion(0.48, 0.72, 2)), 0.82));
@@ -718,6 +756,14 @@ writeWav('Explosion_Big_a', normalize(declick(explosion(1.3, 1.5, 4)), 0.88));
     const b = tone(0.5, (t) => 320 - t * 220, (t) => attackDecay(0.005, 0.18)(t) * (Math.sin(t * 230) > -0.35 ? 1 : 0.15), 'sq');
     mix(b, fmTone(0.4, 480, 0.5, 1.8, expDecay(0.15)), 0.02, 0.4);
     writeWav('Machine_Laser_a', normalize(declick(b), 0.78)); }
+{   // v59.8: Machine of the Void basic gun pattern (spread/barrage/cross/spiral/
+    // wave/chaos) — short staggered double-gun industrial burst, distinct from
+    // the sustained Machine_Laser beam above. Played once per attack cycle.
+    const b = buf(0.14);
+    mix(b, lowpass(whiteNoise(0.1, expDecay(0.03)), 1400), 0, 0.8);
+    mix(b, tone(0.09, (t) => 260 - t * 900, expDecay(0.03), 'sq'), 0, 0.55);
+    mix(b, tone(0.08, (t) => 180 - t * 500, expDecay(0.025), 'sq'), 0.02, 0.4); // second gun stagger
+    writeWav('Machine_Shoot_a', normalize(declick(b), 0.78)); }
 {   // Boss pattern shot: heavy energy burst, used by all boss types for pattern fire
     const b = buf(0.42);
     for (let v = 0; v < 3; v++) mix(b, tone(0.38, (t) => (760 - t * 580) * (1 + (v - 1) * 0.014), attackDecay(0.006, 0.17), 'saw'), 0, 0.38);
@@ -967,5 +1013,11 @@ writeWav('Toolkit_Demo_WindSwell', normalize(declick(windSwell(1.4, 300, 2400)),
 writeWav('Toolkit_Demo_AlienScreech', normalize(declick(alienScreech(0.7, 500, 3.2)), 0.8), DEMO_OUT);
 writeWav('Toolkit_Demo_DigitalGlitch', normalize(declick(digitalGlitch(0.9, 0.45)), 0.75), DEMO_OUT);
 
-console.log('Done.');
+if (failedWrites.length) {
+    console.log('Done with ' + failedWrites.length + ' FAILURE(S) after retries: ' + failedWrites.join(', '));
+    console.log('  -> re-run with ONLY_SFX=<name> to retry just those once whatever was locking them clears.');
+    process.exitCode = 1;
+} else {
+    console.log('Done. ' + writtenCount + ' sound' + (writtenCount === 1 ? '' : 's') + ' written.');
+}
 
